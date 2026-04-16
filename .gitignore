@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+backups/
+archives/
+state.json
+.DS_Store

@@ -1,0 +1,3515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f0f17">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Code Harness">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<title>Code Harness</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'SF Mono', 'Menlo', monospace;
+    background: #0f0f17;
+    color: #c8c8d0;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    font-size: 13px;
+  }
+
+  /* ── Session tabs ── */
+  .tab-bar {
+    display: flex;
+    background: #16162a;
+    border-bottom: 1px solid #2a2a40;
+    flex-shrink: 0;
+  }
+  .tab {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 8px 20px;
+    cursor: pointer;
+    color: #666;
+    border-bottom: 2px solid transparent;
+    transition: all 0.1s;
+    user-select: none;
+    position: relative;
+    text-align: center;
+    overflow: hidden;
+  }
+  .tab:hover { color: #aaa; }
+  .tab.todo-view { border-bottom-color: #00d4ff; }
+  .tab.active { color: #00d4ff; border-bottom-color: #00d4ff; }
+  .tab.busy {
+    position: relative;
+    overflow: hidden;
+  }
+  .tab.busy::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0;
+    left: -10%;
+    width: 10%;
+    background: linear-gradient(90deg, transparent, rgba(0,212,255,0.35), transparent);
+    animation: busy-bar 1.56s linear infinite;
+  }
+  .tab.active.busy::after {
+    background: linear-gradient(90deg, transparent, rgba(0,212,255,0.5), transparent);
+  }
+  .tab.busy-slow {
+    position: relative;
+    overflow: hidden;
+  }
+  .tab.busy-slow::after {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0;
+    left: -10%;
+    width: 10%;
+    background: linear-gradient(90deg, transparent, rgba(0,212,255,0.35), transparent);
+    animation: busy-bar 4.68s linear infinite;
+  }
+  .tab.active.busy-slow::after {
+    background: linear-gradient(90deg, transparent, rgba(0,212,255,0.5), transparent);
+  }
+  .tab.awaiting {
+    animation: awaiting-glow 1.5s ease-in-out infinite;
+  }
+  @keyframes awaiting-glow {
+    0%, 100% { box-shadow: inset 0 0 10px rgba(0,212,255,0.15); color: #00d4ff; }
+    50% { box-shadow: inset 0 0 25px rgba(0,212,255,0.5), 0 0 8px rgba(0,212,255,0.3); color: #88eeff; }
+  }
+  @keyframes busy-bar {
+    0% { left: -10%; }
+    100% { left: 100%; }
+  }
+  .tab .shortcut {
+    font-size: 10px;
+    color: #444;
+    margin-left: 4px;
+  }
+  .tab-provider {
+    display: inline-block;
+    font-size: 9px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    color: #0f0f17;
+    background: #58657a;
+    border-radius: 999px;
+    padding: 1px 5px;
+    margin-right: 6px;
+    vertical-align: 1px;
+  }
+  .tab .tab-todo {
+    display: block;
+    width: 100%;
+    font-size: 12px;
+    color: #9b59b6;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
+    max-width: 100%;
+    margin-top: 2px;
+  }
+  .tab.active .shortcut { color: #0088aa; }
+  .tab-timer {
+    font-size: 10px;
+    color: #2ecc71;
+    margin-left: 6px;
+    font-variant-numeric: tabular-nums;
+  }
+  .tab.active .tab-timer { color: #2ecc71; }
+  .tab-add {
+    flex: 0;
+    padding: 8px 14px;
+    cursor: pointer;
+    color: #444;
+    border-bottom: 2px solid transparent;
+    user-select: none;
+    font-size: 16px;
+    transition: color 0.1s;
+  }
+  .tab-add:hover { color: #00d4ff; }
+  .tab .badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: #f39c12;
+    color: #000;
+    font-size: 9px;
+    padding: 1px 4px;
+    border-radius: 6px;
+    font-weight: bold;
+  }
+
+  /* ── Main area ── */
+  .main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .main::-webkit-scrollbar { width: 4px; }
+  .main::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+
+  /* ── Done section (top, grows with scroll) ── */
+  .done-section {
+    flex-shrink: 0;
+    max-height: 250px;
+    overflow-y: auto;
+    border-bottom: 2px solid #1a2a1a;
+  }
+  .done-section::-webkit-scrollbar { width: 4px; }
+  .done-section::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+  .section-label {
+    position: sticky;
+    top: 0;
+    padding: 8px 16px;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    z-index: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .section-label .count {
+    font-size: 10px;
+    font-weight: normal;
+    opacity: 0.6;
+  }
+
+  /* Done section label */
+  .done-section .section-label {
+    background: #143214;
+    color: #2ecc71;
+    border-bottom: 1px solid #2ecc7140;
+  }
+  /* In Progress section label */
+  .inprogress-section .section-label {
+    background: #302208;
+    color: #f39c12;
+    border-bottom: 1px solid #f39c1240;
+  }
+  /* Backlog section label */
+  .backlog-section .section-label {
+    background: #0f1e38;
+    color: #3498db;
+    border-bottom: 1px solid #3498db40;
+  }
+  .notes-section .section-label {
+    background: #2a120f;
+    color: #e74c3c;
+    border-bottom: 1px solid #e74c3c40;
+  }
+
+  /* Empty state placeholders */
+  .section-empty {
+    padding: 16px;
+    text-align: center;
+    font-size: 11px;
+    font-style: italic;
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .done-section .section-empty { color: #1a3a1a; }
+  .inprogress-section .section-empty { color: #3a2a0a; }
+  .backlog-section .section-empty { color: #0a2040; }
+  .notes-section .section-empty { color: #3a1510; }
+
+  .done-item {
+    padding: 6px 16px;
+    border-bottom: 1px solid #1a1a28;
+    color: #6a7a6a;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .done-item .text { white-space: pre-wrap; word-break: break-word; line-height: 1.4; }
+
+  /* ── In Progress section (middle) ── */
+  .inprogress-section {
+    flex-shrink: 0;
+    max-height: 350px;
+    overflow-y: auto;
+    border-bottom: 2px solid #2a2008;
+  }
+  .inprogress-section::-webkit-scrollbar { width: 4px; }
+  .inprogress-section::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+  .inprogress-item {
+    padding: 8px 16px;
+    background: #15120a;
+    border-bottom: 1px solid #2a2a40;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .inprogress-item .text {
+    flex: 1;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.4;
+    color: #f39c12;
+    user-select: text;
+    -webkit-user-select: text;
+    cursor: text;
+  }
+  .inprogress-item .meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .inprogress-item .time { font-size: 11px; color: #665; }
+  .inprogress-item.focused {
+    border-left: 2px solid #f39c12;
+    padding-left: 14px;
+    background: #1f1a0e;
+  }
+  .inprogress-item.selected {
+    background: #2a1f0a;
+    border-left: 2px solid #e67e22;
+    padding-left: 14px;
+  }
+  .inprogress-item.awaiting-item {
+    border-left: 2px solid #00d4ff;
+    padding-left: 14px;
+    background: #0a1520;
+    animation: awaiting-glow 1.5s ease-in-out infinite;
+  }
+  .btn-approve {
+    background: #00d4ff22;
+    color: #00d4ff;
+    border: 1px solid #00d4ff66;
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-approve:hover {
+    background: #00d4ff44;
+  }
+  .backlog-box.selected {
+    background: #0a1a2a;
+  }
+  .backlog-box.selected textarea {
+    border-left: 2px solid #3498db;
+    padding-left: 14px;
+  }
+
+  .plan-toggle {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    background: transparent;
+    color: #555;
+    border: 1px solid #333;
+    user-select: none;
+    transition: all 0.15s;
+  }
+  .plan-toggle.active {
+    background: rgba(52, 152, 219, 0.3);
+    color: #3498db;
+    border-color: #3498db;
+  }
+  .interrupt-btn {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    cursor: pointer;
+    background: transparent;
+    color: #555;
+    border: 1px solid #333;
+    user-select: none;
+    transition: all 0.15s;
+  }
+  .interrupt-btn:hover {
+    background: rgba(231, 76, 60, 0.3);
+    color: #e74c3c;
+    border-color: #e74c3c;
+  }
+
+  /* ── Backlog section (bottom, multiple textareas) ── */
+  .backlog-section {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .backlog-section::-webkit-scrollbar { width: 4px; }
+  .backlog-section::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+  .backlog-box {
+    position: relative;
+    border-bottom: 1px solid #ffffff61;
+    flex-shrink: 0;
+  }
+  .backlog-box textarea {
+    width: 100%;
+    background: #0c0c18;
+    color: #c8c8d0;
+    border: none;
+    padding: 8px 16px;
+    font-family: inherit;
+    font-size: 13px;
+    resize: none;
+    line-height: 1.4;
+    outline: none;
+    min-height: 52px;
+  }
+  .backlog-box textarea:focus {
+    background: #10101e;
+  }
+  .backlog-box.focused textarea {
+    border-left: 2px solid #00d4ff;
+    padding-left: 14px;
+  }
+  .backlog-box .box-index {
+    position: absolute;
+    top: 0;
+    right: 0;
+    font-size: 8px;
+    font-weight: 700;
+    color: #000;
+    background: #00d4ff;
+    min-width: 13px;
+    height: 13px;
+    line-height: 13px;
+    text-align: center;
+    border-bottom-left-radius: 3px;
+    z-index: 1;
+  }
+
+  .notes-section {
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .notes-box {
+    border-bottom: 1px solid #ffffff61;
+    flex-shrink: 0;
+  }
+  .notes-box textarea {
+    width: 100%;
+    background: #150c0a;
+    color: #e74c3c;
+    border: none;
+    padding: 8px 16px;
+    font-family: inherit;
+    font-size: 13px;
+    resize: none;
+    line-height: 1.4;
+    outline: none;
+    min-height: 52px;
+  }
+  .notes-box textarea:focus {
+    background: #1b0f0c;
+  }
+
+  /* ── Bottom bar ── */
+  .bottom-bar {
+    flex-shrink: 0;
+    padding: 6px 16px;
+    background: #16162a;
+    border-top: 1px solid #2a2a40;
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: #444;
+  }
+  .bottom-bar .shortcuts span { margin-right: 14px; }
+  .bottom-bar kbd {
+    background: #222;
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: #888;
+    font-size: 10px;
+  }
+
+  /* ── Buttons ── */
+  .btn {
+    font-family: inherit;
+    font-size: 11px;
+    padding: 3px 10px;
+    border: 1px solid #333;
+    border-radius: 3px;
+    background: #222;
+    color: #aaa;
+    cursor: pointer;
+  }
+  .btn:hover { background: #333; }
+  .btn-done { border-color: #2ecc71; color: #2ecc71; }
+  .btn-done:hover { background: #2ecc71; color: #000; }
+  .btn-pause { border-color: #2ecc71; color: #2ecc71; }
+  .btn-pause:hover { background: #222; color: #2ecc71; }
+  .btn-pause.paused {
+    background: #2ecc71;
+    color: #000;
+    border-color: #2ecc71;
+    cursor: pointer;
+  }
+  .btn-pause.paused:hover { background: #2ecc71; color: #000; }
+  .btn-busy { border-color: #e74c3c; color: #e74c3c; }
+  .btn-busy:hover { background: #222; color: #e74c3c; }
+  .btn-busy.active {
+    background: #e74c3c;
+    color: #fff;
+    border-color: #e74c3c;
+  }
+  .btn-busy.active:hover { background: #e74c3c; color: #fff; }
+  .btn-flush { border-color: #e74c3c; color: #e74c3c; }
+  .btn-flush:hover { background: #e74c3c; color: #fff; }
+  .btn-ping { border-color: #555; color: #777; font-size: 10px; padding: 2px 6px; }
+
+  .time-blocks-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.72);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 16px;
+  }
+  .time-blocks-modal.open {
+    display: flex;
+  }
+  .time-blocks-dialog {
+    width: min(560px, 100%);
+    max-height: min(620px, calc(100vh - 32px));
+    background: #101010;
+    border: 1px solid #2a2a2a;
+    border-radius: 10px;
+    box-shadow: 0 20px 80px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .time-blocks-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid #202020;
+  }
+  .time-blocks-title {
+    color: #ddd;
+    font-size: 14px;
+    font-weight: bold;
+  }
+  .time-blocks-subtitle {
+    margin-top: 3px;
+    color: #777;
+    font-size: 11px;
+  }
+  .time-blocks-close {
+    flex: 0 0 auto;
+  }
+  .time-blocks-body {
+    padding: 10px 16px 16px;
+    overflow-y: auto;
+  }
+  .time-blocks-empty {
+    color: #666;
+    font-size: 12px;
+    padding: 12px 0;
+  }
+  .time-blocks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .time-blocks-row {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: baseline;
+    padding: 8px 0;
+    border-bottom: 1px solid #1b1b1b;
+  }
+  .time-blocks-index {
+    color: #666;
+    font-size: 11px;
+  }
+  .time-blocks-range {
+    color: #ddd;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  .time-blocks-duration {
+    color: #2ecc71;
+    font-size: 12px;
+    font-weight: bold;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .time-blocks-total {
+    display: flex;
+    justify-content: flex-end;
+    padding-top: 10px;
+    color: #2ecc71;
+    font-size: 12px;
+    font-weight: bold;
+  }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed;
+    bottom: 40px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #2ecc71;
+    color: #000;
+    padding: 6px 16px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: bold;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    z-index: 100;
+  }
+  .toast.show { opacity: 1; }
+  .toast.error { background: #e74c3c; color: #fff; }
+
+  .session-provider-inline {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .session-provider-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 32px;
+    height: 24px;
+    padding: 0 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    color: #0f0f17;
+    background: #58657a;
+  }
+  .session-provider-select {
+    background: #111827;
+    color: #9cc8ff;
+    border: 1px solid #2f4669;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 11px;
+    height: 24px;
+    padding: 2px 8px;
+  }
+  .session-provider-select:focus {
+    outline: none;
+    border-color: #00d4ff;
+  }
+  .session-provider-hint {
+    color: #6b7f9d;
+    font-size: 10px;
+    margin-left: 8px;
+    white-space: nowrap;
+  }
+
+  /* ── Todo View ── */
+  .todo-container {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0;
+  }
+  .todo-container::-webkit-scrollbar { width: 4px; }
+  .todo-container::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+  .todo-date-header {
+    position: sticky;
+    top: 0;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    background: #12121f;
+    color: #9b59b6;
+    border-left: 3px solid #9b59b6;
+    z-index: 1;
+    display: flex;
+    justify-content: space-between;
+  }
+  .todo-date-header.past { color: #555; border-left-color: #333; background: #0f0f17; }
+  .todo-date-header .date-stats { font-weight: normal; font-size: 11px; opacity: 0.6; }
+  .todo-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 2px 16px 2px 14px;
+    border-left: 2px solid transparent;
+    border-bottom: 1px solid #1a1a28;
+    min-height: 28px;
+  }
+  .todo-item.topic textarea { caret-color: #9b59b6; }
+  .todo-item.done-todo { opacity: 0.4; }
+  .todo-item .todo-check {
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+    flex-shrink: 0;
+    accent-color: #9b59b6;
+    margin-top: 5px;
+  }
+  .todo-topic-marker {
+    width: 14px;
+    height: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: #9b59b6;
+    font-size: 11px;
+    font-weight: bold;
+    margin-top: 5px;
+  }
+  .todo-text-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+  }
+  .todo-text-overlay {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .todo-text-overlay-line {
+    display: block;
+    min-height: 20px;
+    color: #c8c8d0;
+    white-space: pre;
+  }
+  .todo-text-overlay-line.secondary {
+    color: #e74c3c;
+  }
+  .todo-item.topic .todo-text-overlay-line.primary {
+    color: #9b59b6;
+  }
+  .todo-item.done-todo .todo-text-overlay-line.primary {
+    color: #555;
+  }
+  .todo-item textarea {
+    width: 100%;
+    flex: 1;
+    background: transparent;
+    color: transparent;
+    border: none;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 20px;
+    resize: none;
+    outline: none;
+    height: 24px;
+    min-height: 24px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0;
+    white-space: pre;
+    position: relative;
+    z-index: 1;
+    -webkit-text-fill-color: transparent;
+    caret-color: #c8c8d0;
+  }
+  .todo-item.done-todo textarea {
+    caret-color: #555;
+  }
+  .todo-item.focused {
+    border-left-color: #9b59b6;
+  }
+  .todo-item.selected {
+    background: #1a1028;
+    border-left-color: #9b59b6;
+  }
+  .todo-item .todo-idx {
+    font-size: 10px;
+    color: #333;
+    min-width: 20px;
+    text-align: right;
+    flex-shrink: 0;
+    margin-top: 5px;
+  }
+  .todo-session-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 20px;
+    font-size: 18px;
+    line-height: 20px;
+    padding: 0 4px;
+    border-radius: 4px;
+    background: #2a2a4a;
+    color: #00d4ff;
+    flex-shrink: 0;
+    min-width: 24px;
+    text-align: center;
+    font-weight: bold;
+    letter-spacing: -0.5px;
+    margin-top: 0;
+  }
+  .todo-session-badge.empty {
+    background: transparent;
+    color: #333;
+    border: 1px dashed #333;
+  }
+  .todo-session-badge.subtodo-badge {
+    background: #2a1a3a;
+    color: #9b59b6;
+  }
+  .todo-item.indented {
+    padding-left: 48px;
+  }
+  .todo-item.done-todo .todo-topic-marker {
+    color: #555;
+  }
+  .todo-date-title {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .todo-date-timer,
+  .todo-inline-timer {
+    color: #2ecc71;
+    font-size: 12px;
+    font-weight: bold;
+    white-space: nowrap;
+  }
+  .todo-date-target {
+    color: #2ecc71;
+    font-size: 11px;
+    font-weight: normal;
+    white-space: nowrap;
+    letter-spacing: 0;
+    opacity: 0.9;
+  }
+  .todo-date-header.past .todo-date-target {
+    color: #355a35;
+  }
+  .todo-date-blocks-btn {
+    font-family: inherit;
+    font-size: 10px;
+    padding: 1px 6px;
+    border: 1px solid #355a35;
+    border-radius: 999px;
+    background: transparent;
+    color: #2ecc71;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .todo-date-blocks-btn:hover {
+    background: #2ecc7122;
+  }
+  .todo-date-header.past .todo-date-blocks-btn {
+    border-color: #2a3d2a;
+    color: #355a35;
+  }
+  .todo-date-timer:empty,
+  .todo-inline-timer:empty {
+    display: none;
+  }
+  .todo-inline-timer {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 8px;
+  }
+  /* todo-banner removed: todo text now shown inline in tabs */
+</style>
+</head>
+<body>
+
+<!-- Tasks View -->
+<div class="tab-bar" id="tabBar"></div>
+<div id="tasksView" style="display:flex;flex-direction:column;flex:1;overflow:hidden;">
+  <div class="main">
+    <!-- Done -->
+    <div class="done-section" id="doneSection">
+      <div class="section-label">
+        <span>Done</span>
+        <span id="doneCount"></span>
+      </div>
+      <div id="doneList"></div>
+    </div>
+
+    <!-- In Progress -->
+    <div class="inprogress-section" id="inprogressSection">
+      <div class="section-label">
+        <span>In Progress</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="ipCount"></span>
+          <span id="interruptBtn" class="interrupt-btn" onclick="interruptSession()" title="Interrupt active session">stop</span>
+        </div>
+      </div>
+      <div id="inprogressList"></div>
+    </div>
+
+    <!-- Backlog -->
+    <div class="backlog-section" id="backlogSection">
+      <div class="section-label">
+        <span>Backlog</span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span id="blCount"></span>
+          <span id="planToggle" class="plan-toggle" onclick="togglePlanMode()" title="Plan mode: send /plan before task">plan</span>
+        </div>
+      </div>
+      <div id="backlogList"></div>
+    </div>
+
+    <div class="notes-section" id="notesSection">
+      <div class="section-label">
+        <span>Notes</span>
+        <span class="count" id="notesCount"></span>
+      </div>
+      <div id="notesList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Todo View -->
+<div id="todoView" style="display:none;flex-direction:column;flex:1;overflow:hidden;position:relative;">
+  <div class="todo-container" id="todoContainer"></div>
+  <div id="todoMasterTimer" style="position:absolute;bottom:8px;right:16px;color:#2ecc71;font-size:12px;font-weight:bold;">0:00</div>
+</div>
+
+<div class="bottom-bar">
+  <div class="shortcuts">
+    <span><kbd>Opt+1-6</kbd> or <kbd>Opt+Left/Right</kbd> switch session</span>
+    <span><kbd>Opt+Up/Down</kbd> navigate</span>
+    <span><kbd>Opt+Shift+Up/Down</kbd> multi-select</span>
+    <span><kbd>Cmd+Enter</kbd> send backlog / done in progress</span>
+    <span><kbd>Opt+Enter</kbd> new slot</span>
+    <span><kbd>Opt+Backspace</kbd> delete backlog</span>
+    <span><kbd>Opt+Tab</kbd> toggle view</span>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <span id="masterTimer" style="color:#2ecc71;font-size:12px;font-weight:bold;margin-right:4px;">0:00</span>
+    <button class="btn btn-pause" id="pauseTimerBtn" onclick="pauseTimer()">Pause</button>
+    <button class="btn btn-busy" id="busyTimerBtn" onclick="toggleBusyTimer()">Busy</button>
+    <span id="sessionLabelArea"></span>
+    <button class="btn btn-ping" id="pingBtn" onclick="pingCurrent()">Ping</button>
+    <button class="btn btn-flush" onclick="deleteCurrentSession()">Delete</button>
+    <button class="btn btn-flush" onclick="flushArchive()">Flush</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<div class="time-blocks-modal" id="timeBlocksModal" onclick="closeTimeBlocksModal()">
+  <div class="time-blocks-dialog" onclick="event.stopPropagation()">
+    <div class="time-blocks-header">
+      <div>
+        <div class="time-blocks-title" id="timeBlocksTitle">Time Blocks</div>
+        <div class="time-blocks-subtitle" id="timeBlocksSubtitle">Pacific Time</div>
+      </div>
+      <button class="btn time-blocks-close" type="button" onclick="closeTimeBlocksModal()">Close</button>
+    </div>
+    <div class="time-blocks-body" id="timeBlocksBody"></div>
+  </div>
+</div>
+
+<script>
+let state = { sessions: {}, tasks: [] };
+let activeSession = '1';
+let focusedZone = 'backlog'; // 'ip' | 'backlog'
+let focusedIdx = 0; // index within the focused zone
+let selectedSet = new Set(); // Set of task IDs for multi-select
+let viewMode = 'tasks'; // 'tasks' | 'todo'
+let focusedTodoIdx = 0; // index within today's todos
+let selectedTodoSet = new Set(); // Set of todo indices for multi-select
+let todoSelectionAnchor = null; // index where Shift+Arrow selection started
+let todoSaveTimers = {};
+let historyIdx = -1; // -1 = not browsing history; 0+ = index into prompt history (LIFO)
+let historyOriginalText = null; // stash the original textarea text before history browsing starts
+let rewindInProgress = false; // guard against double-tap of Cmd+Escape rewind
+let selectionAnchor = null; // index where task-row multi-select started
+let backlogReorderQueue = Promise.resolve();
+const MIN_BACKLOG_ROWS = 3;
+let _suppressFocusClear = false; // prevents onBacklogFocus/onTodoFocus from clearing selection on programmatic focus()
+let _suppressFocusClearRAF = 0;
+function suppressFocusClear() {
+  _suppressFocusClear = true;
+  cancelAnimationFrame(_suppressFocusClearRAF);
+  _suppressFocusClearRAF = requestAnimationFrame(() => { _suppressFocusClear = false; });
+}
+
+function focusTextareaAtEnd(ta) {
+  if (!ta) return;
+  ta.focus();
+  const moveCaretToEnd = () => {
+    const end = ta.value.length;
+    try {
+      ta.setSelectionRange(end, end);
+    } catch {}
+  };
+  moveCaretToEnd();
+  requestAnimationFrame(moveCaretToEnd);
+}
+
+function focusTextareaWithSelection(ta, start, end = start) {
+  if (!ta) return;
+  ta.focus();
+  const restoreSelection = () => {
+    const max = ta.value.length;
+    const safeStart = Math.max(0, Math.min(start, max));
+    const safeEnd = Math.max(safeStart, Math.min(end, max));
+    try {
+      ta.setSelectionRange(safeStart, safeEnd);
+    } catch {}
+  };
+  restoreSelection();
+  requestAnimationFrame(restoreSelection);
+}
+// ── Activity-based timer tracking ──
+let sessionElapsed = {};     // {sessionId: ms} - active work time per session
+let todoElapsed = {};        // {todoId: ms} - lifetime work time per todo
+let todoSessionStart = {};   // {todoId: ms} - sessionElapsed snapshot when todo took its current session
+let unassignedMasterElapsed = 0; // ms counted toward master timer when no todo is attached to the active session
+let timerActivityBlocks = {}; // {date: [{start: ms, end: ms}]}
+let currentTimerActivityBlock = null; // {date: YYYY-MM-DD, start: ms}
+let timerPauseReason = null; // null | 'manual' | 'idle'
+let timerBusyMode = false;
+let lastActivityTime = Date.now();
+let lastTimerTickAt = Date.now();
+let timerDate = '';           // YYYY-MM-DD Pacific, for midnight reset
+let lastTimerSave = 0;
+let timerInitialized = false; // set true after first state load
+let timeBlocksModalDate = null;
+const PROVIDER_DEFAULTS = {
+  claude: {
+    badge: 'CC',
+    capabilities: {
+      plan: true,
+      interrupt: true,
+      rewind: true,
+      approval_ui: true,
+      permission_ui: true,
+      question_ui: true,
+      todo_name: true,
+      commit_on_done: true,
+    }
+  },
+  codex: {
+    badge: 'CX',
+    capabilities: {
+      plan: false,
+      interrupt: false,
+      rewind: false,
+      approval_ui: false,
+      permission_ui: false,
+      question_ui: false,
+      todo_name: false,
+      commit_on_done: false,
+    }
+  }
+};
+
+const heldKeys = new Set();
+let inProgressTextMouseDown = false;
+document.addEventListener('keydown', (e) => {
+  heldKeys.add(e.code);
+  // Track Cmd+Shift+Enter multi-tap for plan/ultrathink/team modes
+  if (e.metaKey && e.shiftKey && e.key === 'Enter') {
+    e.preventDefault();
+    cmdShiftEnterCount++;
+    clearTimeout(cmdShiftEnterTimer);
+    cmdShiftEnterTimer = setTimeout(() => {
+      cmdShiftEnterResolve(cmdShiftEnterCount);
+      cmdShiftEnterCount = 0;
+    }, 400);
+  }
+});
+document.addEventListener('keyup', (e) => heldKeys.delete(e.code));
+document.addEventListener('mousedown', (e) => {
+  inProgressTextMouseDown = !!e.target.closest('.inprogress-item .text');
+});
+document.addEventListener('mouseup', () => {
+  inProgressTextMouseDown = false;
+});
+document.addEventListener('dragend', () => {
+  inProgressTextMouseDown = false;
+});
+
+function timerPaused() {
+  return timerPauseReason !== null;
+}
+
+function renderPauseButton() {
+  const btn = document.getElementById('pauseTimerBtn');
+  if (!btn) return;
+  const paused = timerPaused();
+  btn.textContent = paused ? 'Paused' : 'Pause';
+  btn.classList.toggle('paused', paused);
+  btn.setAttribute('aria-pressed', paused ? 'true' : 'false');
+  btn.title = paused
+    ? 'Click to resume timer'
+    : 'Pause timer until you type in a task or todo';
+}
+
+function renderBusyButton() {
+  const btn = document.getElementById('busyTimerBtn');
+  if (!btn) return;
+  btn.classList.toggle('active', !!timerBusyMode);
+  btn.setAttribute('aria-pressed', timerBusyMode ? 'true' : 'false');
+  btn.title = timerBusyMode
+    ? 'Busy mode keeps the active session timer running through inactivity'
+    : 'Keep the active session timer running even when you stop interacting';
+}
+
+function noteGeneralActivity() {
+  if (timerPaused()) return;
+  lastActivityTime = Date.now();
+}
+
+function resetTimerTick(now = Date.now()) {
+  lastTimerTickAt = now;
+}
+
+function applyTimerDelta(deltaMs, activeTodo, sessionId = activeSession) {
+  if (!deltaMs) return;
+  if (activeTodo) {
+    const current = Number(sessionElapsed[sessionId] || 0) || 0;
+    sessionElapsed[sessionId] = Math.max(0, current + deltaMs);
+  } else {
+    unassignedMasterElapsed = Math.max(0, (Number(unassignedMasterElapsed) || 0) + deltaMs);
+  }
+}
+
+function noteTextActivity() {
+  lastActivityTime = Date.now();
+  if (!timerPaused()) return;
+  timerPauseReason = null;
+  resetTimerTick(lastActivityTime);
+  syncTimerActivityBlock(timerShouldBeRunningNow());
+  renderPauseButton();
+}
+
+function pauseTimer() {
+  if (timerPaused()) {
+    timerPauseReason = null;
+    lastActivityTime = Date.now();
+    resetTimerTick(lastActivityTime);
+    syncTimerActivityBlock(timerShouldBeRunningNow());
+  } else {
+    timerBusyMode = false;
+    timerPauseReason = 'manual';
+    resetTimerTick();
+    syncTimerActivityBlock(false);
+  }
+  persistTimers();
+  renderBusyButton();
+  renderPauseButton();
+}
+
+function toggleBusyTimer() {
+  timerBusyMode = !timerBusyMode;
+  lastActivityTime = Date.now();
+  resetTimerTick(lastActivityTime);
+  if (timerBusyMode) timerPauseReason = null;
+  syncTimerActivityBlock(timerShouldBeRunningNow());
+  persistTimers();
+  renderPauseButton();
+  renderBusyButton();
+}
+
+// ── Activity detection for timer ──
+['mousemove', 'mousedown', 'keydown', 'click', 'scroll', 'touchstart'].forEach(evt => {
+  document.addEventListener(evt, noteGeneralActivity, { passive: true });
+});
+
+// ── API ──
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(path, opts);
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(`${res.status} ${path}: ${text.slice(0, 80)}`);
+  }
+}
+
+function toast(msg, error) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (error ? ' error' : '');
+  setTimeout(() => el.className = 'toast', 3000);
+}
+
+function timeAgo(iso) {
+  if (!iso) return '';
+  const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (diff < 60) return Math.floor(diff) + 's';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm';
+  return Math.floor(diff / 3600) + 'h';
+}
+
+function nodeWithinContainer(node, container) {
+  if (!node || !container) return false;
+  const el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+  return !!el && container.contains(el);
+}
+
+function hasInProgressTextSelection() {
+  const list = document.getElementById('inprogressList');
+  const sel = window.getSelection();
+  if (!list || !sel || sel.isCollapsed || !sel.toString()) return false;
+  return nodeWithinContainer(sel.anchorNode, list) || nodeWithinContainer(sel.focusNode, list);
+}
+
+function shouldPreserveInProgressSelection() {
+  return inProgressTextMouseDown || hasInProgressTextSelection();
+}
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const CLAUDE_RESET_ANCHOR_DATE = '2026-04-09';
+const IDLE_AUTO_PAUSE_MS = 600000;
+
+function parseDateOnlyUTC(dateStr) {
+  const [year, month, day] = String(dateStr).split('-').map(Number);
+  if (!year || !month || !day) return NaN;
+  return Date.UTC(year, month - 1, day);
+}
+
+function formatPercent(value) {
+  const rounded = Math.round(value * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded}%` : `${rounded.toFixed(1)}%`;
+}
+
+function normalizeActivityBlocks(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [date, blocks] of Object.entries(raw)) {
+    if (!Array.isArray(blocks)) continue;
+    const clean = blocks
+      .map(block => ({
+        start: Number(block?.start),
+        end: Number(block?.end),
+      }))
+      .filter(block => Number.isFinite(block.start) && Number.isFinite(block.end) && block.end >= block.start);
+    if (clean.length) out[date] = clean;
+  }
+  return out;
+}
+
+function normalizeCurrentActivityBlock(raw) {
+  const date = raw?.date;
+  const start = Number(raw?.start);
+  if (!date || !Number.isFinite(start)) return null;
+  return { date, start };
+}
+
+function todoDateTokenTargetText(dateStr) {
+  const dateUtc = parseDateOnlyUTC(dateStr);
+  const anchorUtc = parseDateOnlyUTC(CLAUDE_RESET_ANCHOR_DATE);
+  if (!Number.isFinite(dateUtc) || !Number.isFinite(anchorUtc)) return '';
+  const daysUntilReset = ((Math.round((anchorUtc - dateUtc) / MS_PER_DAY) % 7) + 7) % 7;
+  const dayIndex = 7 - daysUntilReset;
+  return `target ${formatPercent((dayIndex * 100) / 7)}`;
+}
+
+function formatDuration(ms) {
+  if (ms <= 0) return '0:00';
+  const totalSec = Math.floor(ms / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return `${m}:${String(s).padStart(2,'0')}`;
+}
+
+function formatDurationShort(ms) {
+  const totalMin = Math.max(0, Math.round(ms / 60000));
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  return `${m}m`;
+}
+
+function formatPacificClock(ts) {
+  if (!Number.isFinite(ts)) return '';
+  return new Date(ts).toLocaleTimeString('en-US', {
+    timeZone: 'America/Los_Angeles',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).replace(':00', '').replace(/\s/g, '').toLowerCase();
+}
+
+function timeBlockEntriesForDate(date) {
+  const blocks = Array.isArray(timerActivityBlocks[date]) ? timerActivityBlocks[date].slice() : [];
+  if (currentTimerActivityBlock?.date === date && Number.isFinite(currentTimerActivityBlock.start)) {
+    blocks.push({ start: currentTimerActivityBlock.start, end: Date.now(), active: true });
+  }
+  return blocks
+    .filter(block => Number.isFinite(block.start) && Number.isFinite(block.end) && block.end >= block.start)
+    .sort((a, b) => a.start - b.start);
+}
+
+function timeBlockTotalForDate(date) {
+  return timeBlockEntriesForDate(date).reduce(
+    (total, block) => total + Math.max(0, block.end - block.start),
+    0
+  );
+}
+
+function renderTimeBlocksModal() {
+  const modal = document.getElementById('timeBlocksModal');
+  const body = document.getElementById('timeBlocksBody');
+  const title = document.getElementById('timeBlocksTitle');
+  const subtitle = document.getElementById('timeBlocksSubtitle');
+  if (!modal || !body || !title || !subtitle) return;
+  if (!timeBlocksModalDate) {
+    modal.classList.remove('open');
+    return;
+  }
+  const date = timeBlocksModalDate;
+  const entries = timeBlockEntriesForDate(date);
+  title.textContent = `${date} Time Blocks`;
+  subtitle.textContent = 'Continuous timer activity in America/Los_Angeles';
+  if (entries.length === 0) {
+    body.innerHTML = '<div class="time-blocks-empty">No recorded time blocks for this date.</div>';
+    modal.classList.add('open');
+    return;
+  }
+  const rows = entries.map((block, idx) => {
+    const duration = Math.max(0, block.end - block.start);
+    const suffix = block.active ? ' (running)' : '';
+    return `
+      <div class="time-blocks-row">
+        <div class="time-blocks-index">${idx + 1}.</div>
+        <div class="time-blocks-range">${formatPacificClock(block.start)} - ${formatPacificClock(block.end)}${suffix}</div>
+        <div class="time-blocks-duration">${formatDurationShort(duration)}</div>
+      </div>
+    `;
+  }).join('');
+  const total = timeBlockTotalForDate(date);
+  body.innerHTML = `
+    <div class="time-blocks-list">${rows}</div>
+    <div class="time-blocks-total">Total ${formatDurationShort(total)}</div>
+  `;
+  modal.classList.add('open');
+}
+
+function openTimeBlocksModal(date) {
+  timeBlocksModalDate = date;
+  renderTimeBlocksModal();
+}
+
+function closeTimeBlocksModal() {
+  timeBlocksModalDate = null;
+  renderTimeBlocksModal();
+}
+
+function timerShouldBeRunningNow(now = Date.now()) {
+  if (timerPaused()) return false;
+  if (timerBusyMode) return true;
+  return now - lastActivityTime < IDLE_AUTO_PAUSE_MS;
+}
+
+function closeCurrentActivityBlock(endTs = Date.now()) {
+  if (!currentTimerActivityBlock) return false;
+  const date = currentTimerActivityBlock.date;
+  const start = Number(currentTimerActivityBlock.start);
+  currentTimerActivityBlock = null;
+  if (!date || !Number.isFinite(start)) return true;
+  const end = Math.max(start, Number(endTs) || start);
+  if (!timerActivityBlocks[date]) timerActivityBlocks[date] = [];
+  timerActivityBlocks[date].push({ start, end });
+  return true;
+}
+
+function syncTimerActivityBlock(shouldRun, now = Date.now()) {
+  let changed = false;
+  const today = getTodayPacific();
+  if (currentTimerActivityBlock && currentTimerActivityBlock.date !== today) {
+    changed = closeCurrentActivityBlock(now) || changed;
+  }
+  if (shouldRun) {
+    if (!currentTimerActivityBlock) {
+      currentTimerActivityBlock = { date: today, start: now };
+      changed = true;
+    }
+  } else if (currentTimerActivityBlock) {
+    changed = closeCurrentActivityBlock(now) || changed;
+  }
+  if (changed) persistTimers();
+}
+
+function sessionDuration(sessId) {
+  const todo = todoForSession(sessId);
+  if (!todo) return null;
+  const ms = currentTodoDuration(todo);
+  return ms > 0 ? ms : null;
+}
+
+function totalTodoElapsedForDate(date) {
+  const todos = state.todos?.[date] || [];
+  let total = 0;
+  for (let i = 0; i < todos.length; i++) {
+    if (isTopicAt(todos, i)) continue;
+    total += currentTodoDuration(todos[i]);
+  }
+  return total;
+}
+
+function totalSessionElapsed() {
+  return totalTodoElapsedForDate(getTodayPacific()) + unassignedMasterElapsed;
+}
+
+function storedTodoDuration(todoId) {
+  const ms = Number(todoElapsed[todoId] || 0);
+  return Number.isFinite(ms) && ms > 0 ? ms : 0;
+}
+
+function storedTodoSessionStart(todoId) {
+  const ms = Number(todoSessionStart[todoId] || 0);
+  return Number.isFinite(ms) && ms >= 0 ? ms : 0;
+}
+
+function currentTodoDuration(todo) {
+  if (!todo) return 0;
+  const stored = storedTodoDuration(todo.id);
+  if (!todo.done && todo.session) {
+    const live = Number(sessionElapsed[todo.session] || 0);
+    const start = storedTodoSessionStart(todo.id);
+    const delta = Number.isFinite(live) ? Math.max(0, live - start) : 0;
+    return stored + delta;
+  }
+  return stored;
+}
+
+function snapshotTodoDuration(todo) {
+  if (!todo) return 0;
+  const total = currentTodoDuration(todo);
+  todoElapsed[todo.id] = total;
+  return total;
+}
+
+function beginTodoSessionTimer(todoId, sessionId) {
+  if (!todoId) return;
+  if (!sessionId) {
+    delete todoSessionStart[todoId];
+    return;
+  }
+  todoSessionStart[todoId] = Number(sessionElapsed[sessionId] || 0);
+}
+
+function topicDuration(todos, idx) {
+  let total = 0;
+  for (let i = idx + 1; i < todos.length; i++) {
+    if ((todos[i].indent || 0) === 0) break;
+    total += currentTodoDuration(todos[i]);
+  }
+  return total;
+}
+
+function todoRowDuration(date, idx) {
+  const todos = state.todos?.[date] || [];
+  const todo = todos[idx];
+  if (!todo) return 0;
+  return isTopicAt(todos, idx) ? topicDuration(todos, idx) : currentTodoDuration(todo);
+}
+
+function isActiveTodoTimer(date, idx) {
+  if (date !== getTodayPacific()) return false;
+  const todos = state.todos?.[date] || [];
+  const todo = todos[idx];
+  if (!todo || todo.done || isTopicAt(todos, idx) || !todo.session || todo.session !== activeSession) {
+    return false;
+  }
+  return todoForSession(todo.session)?.id === todo.id;
+}
+
+function todoRowTimerText(date, idx) {
+  const ms = todoRowDuration(date, idx);
+  if (ms > 0) return formatDuration(ms);
+  return '';
+}
+
+function todoDateTimerText(date) {
+  const total = timeBlockTotalForDate(date);
+  return total > 0 ? formatDuration(total) : '';
+}
+
+function sessionData(sessionId = activeSession) {
+  return state.sessions?.[sessionId] || {};
+}
+
+function providerDefaults(sessionId = activeSession) {
+  return PROVIDER_DEFAULTS[sessionProvider(sessionId)] || PROVIDER_DEFAULTS.claude;
+}
+
+function sessionCaps(sessionId = activeSession) {
+  return {
+    ...providerDefaults(sessionId).capabilities,
+    ...(sessionData(sessionId).capabilities || {}),
+  };
+}
+
+function sessionProvider(sessionId = activeSession) {
+  return sessionData(sessionId).provider || 'claude';
+}
+
+function sessionProviderBadge(sessionId = activeSession) {
+  return sessionData(sessionId).provider_badge || providerDefaults(sessionId).badge;
+}
+
+function providerSupports(capability, sessionId = activeSession) {
+  return !!sessionCaps(sessionId)[capability];
+}
+
+// ── Timer persistence and display ──
+function persistTimers() {
+  const today = new Date().toLocaleDateString('en-CA', {timeZone: 'America/Los_Angeles'});
+  api('POST', '/api/timers', {
+    date: today,
+    sessions: sessionElapsed,
+    todo_elapsed: todoElapsed,
+    todo_session_start: todoSessionStart,
+    unassigned_master_elapsed: unassignedMasterElapsed,
+    activity_blocks: timerActivityBlocks,
+    current_activity_block: currentTimerActivityBlock,
+    busy_mode: timerBusyMode,
+  });
+  lastTimerSave = Date.now();
+}
+
+function renderTimerDisplays() {
+  const master = totalSessionElapsed();
+  const str = formatDuration(master);
+  const el1 = document.getElementById('masterTimer');
+  const el2 = document.getElementById('todoMasterTimer');
+  if (el1) el1.textContent = str;
+  if (el2) el2.textContent = str;
+  renderPauseButton();
+  renderBusyButton();
+  renderTodoTimers();
+  renderTimeBlocksModal();
+}
+
+function initTimersFromState() {
+  if (!state.timers) return;
+  const today = new Date().toLocaleDateString('en-CA', {timeZone: 'America/Los_Angeles'});
+  todoElapsed = state.timers.todo_elapsed || {};
+  timerActivityBlocks = normalizeActivityBlocks(state.timers.activity_blocks);
+  currentTimerActivityBlock = normalizeCurrentActivityBlock(state.timers.current_activity_block);
+  if (currentTimerActivityBlock?.date !== today) currentTimerActivityBlock = null;
+  timerBusyMode = !!state.timers.busy_mode;
+  if (state.timers.date === today) {
+    sessionElapsed = state.timers.sessions || {};
+    todoSessionStart = state.timers.todo_session_start || {};
+    unassignedMasterElapsed = Number(state.timers.unassigned_master_elapsed || 0) || 0;
+  } else {
+    sessionElapsed = {};
+    todoSessionStart = {};
+    unassignedMasterElapsed = 0;
+  }
+  timerDate = today;
+  timerInitialized = true;
+  resetTimerTick();
+  syncTimerActivityBlock(timerShouldBeRunningNow());
+}
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ── Filtered task getters ──
+function tasksFor(session, st) {
+  return state.tasks.filter(t => t.session === session && t.state === st);
+}
+function ipSorted(session) {
+  return [...tasksFor(session, 'in_progress')].sort((a, b) => (a.started_at || '').localeCompare(b.started_at || ''));
+}
+
+// ── Render ──
+function render() {
+  renderTabs();
+  renderDone();
+  renderInProgress();
+  renderBacklog();
+  renderNotes();
+  renderBottomBar();
+}
+
+function renderTabs() {
+  const bar = document.getElementById('tabBar');
+  const today = getTodayPacific();
+  const todos = state.todos ? todosForDate(today) : [];
+  const sessionIds = Object.keys(state.sessions);
+
+  // Build desired state for each tab
+  const tabData = sessionIds.map(id => {
+    const s = state.sessions[id];
+    const hasSubagents = (s.subagent_count || 0) > 0;
+    let busy = '';
+    if (s.awaiting_approval || s.awaiting_permission || s.awaiting_question) busy = ' awaiting';
+    else if (s.busy) busy = ' busy';
+    else if (hasSubagents) busy = ' busy-slow';
+    const todoViewClass = viewMode === 'todo' ? ' todo-view' : '';
+    const active = id === activeSession ? ' active' : '';
+    const ipCount = tasksFor(id, 'in_progress').length;
+    const badge = ipCount > 0 ? `<span class="badge">${ipCount}</span>` : '';
+    const dur = sessionDuration(id);
+    const durStr = dur !== null ? `<span class="tab-timer">${formatDuration(dur)}</span>` : '';
+    const assigned = todos.filter((t, i) => t.session === id && !t.done && t.text.trim() && !isTopicAt(todos, i));
+    const todoStr = assigned.length > 0 ? `<span class="tab-todo">${esc(todoPrimaryText(assigned[0].text))}</span>` : '';
+    const providerBadge = `<span class="tab-provider">${esc(sessionProviderBadge(id))}</span>`;
+    return { id, className: `tab${todoViewClass}${active}${busy}`, content: `${providerBadge}${esc(s.label)}${durStr}${badge}${todoStr}` };
+  });
+
+  // Check if we need full rebuild (session count changed or first render)
+  const existingTabs = bar.querySelectorAll('.tab[data-sid]');
+  if (existingTabs.length !== sessionIds.length) {
+    let html = '';
+    for (const td of tabData) {
+      html += `<div class="tab ${td.className}" data-sid="${td.id}" onclick="switchSession('${td.id}')">${td.content}</div>`;
+    }
+    html += `<div class="tab-add" onclick="addSession()">+</div>`;
+    bar.innerHTML = html;
+    return;
+  }
+
+  // In-place update: preserve DOM elements (and their CSS animations)
+  existingTabs.forEach((el, i) => {
+    const td = tabData[i];
+    if (el.className !== td.className) el.className = td.className;
+    if (el.innerHTML !== td.content) el.innerHTML = td.content;
+  });
+}
+
+function renderDone() {
+  const items = tasksFor(activeSession, 'done');
+  document.getElementById('doneCount').textContent = items.length || '';
+  if (items.length === 0) {
+    document.getElementById('doneList').innerHTML = '<div class="section-empty">No completed tasks</div>';
+    return;
+  }
+  // Oldest on top, newest at bottom
+  const sorted = [...items].sort((a, b) => (a.completed_at || '').localeCompare(b.completed_at || ''));
+  const newHTML = sorted.map(t => `
+    <div class="done-item">
+      <span class="text">${esc(t.prompt)}</span>
+    </div>
+  `).join('');
+  const list = document.getElementById('doneList');
+  // Only update DOM and auto-scroll when content actually changed (preserves user scroll position)
+  if (list.innerHTML !== newHTML) {
+    list.innerHTML = newHTML;
+    const section = document.getElementById('doneSection');
+    section.scrollTop = section.scrollHeight;
+  }
+}
+
+function renderTodoTimers() {
+  document.querySelectorAll('.todo-date-timer').forEach(el => {
+    const text = todoDateTimerText(el.dataset.todoDate);
+    if (el.textContent !== text) el.textContent = text;
+  });
+  document.querySelectorAll('.todo-item textarea').forEach(updateTodoTextOverlay);
+}
+
+function renderInProgress() {
+  const sorted = ipSorted(activeSession);
+  document.getElementById('ipCount').textContent = sorted.length || '';
+  if (sorted.length === 0) {
+    document.getElementById('inprogressList').innerHTML = '<div class="section-empty">Nothing in progress</div>';
+    return;
+  }
+  const awaiting = state.sessions[activeSession]?.awaiting_approval;
+  const awaitingPerm = state.sessions[activeSession]?.awaiting_permission;
+  const awaitingQ = state.sessions[activeSession]?.awaiting_question;
+  const supportsAwaitingUI = providerSupports('approval_ui') || providerSupports('permission_ui') || providerSupports('question_ui');
+  document.getElementById('inprogressList').innerHTML = sorted.map((t, i) => {
+    const focused = focusedZone === 'ip' && i === focusedIdx ? ' focused' : '';
+    const selected = selectedSet.has(t.id) ? ' selected' : '';
+    const isLastItem = i === sorted.length - 1;
+    const isAwaitingItem = supportsAwaitingUI && (awaiting || awaitingPerm) && isLastItem;
+    const awaitingClass = supportsAwaitingUI && (awaiting || awaitingPerm || awaitingQ) && isLastItem ? ' awaiting-item' : '';
+    let approveBtn = '';
+    if (isAwaitingItem && awaiting) approveBtn = '<button class="btn-approve" onclick="approveSession(event)">Approve</button>';
+    else if (isAwaitingItem && awaitingPerm) approveBtn = '<button class="btn-approve" onclick="yesSession(event)">Yes</button>';
+    return `
+    <div class="inprogress-item${focused}${selected}${awaitingClass}" data-ip-idx="${i}" onclick="selectIPItem(event, ${i})">
+      <span class="text">${esc(t.prompt)}</span>
+      <div class="meta">
+        ${approveBtn}
+        <span class="time">${timeAgo(t.started_at)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderBacklog() {
+  const items = tasksFor(activeSession, 'backlog');
+  document.getElementById('blCount').textContent = items.length || '';
+  const list = document.getElementById('backlogList');
+
+  // On an empty session, seed a small working set of blank backlog rows.
+  if (items.length === 0) {
+    createEmptyBacklog(MIN_BACKLOG_ROWS);
+    return;
+  }
+
+  // Clamp focusedIdx for backlog
+  if (focusedZone === 'backlog') {
+    if (focusedIdx >= items.length) focusedIdx = items.length - 1;
+    if (focusedIdx < 0) focusedIdx = 0;
+  }
+
+  let html = '';
+  items.forEach((t, i) => {
+    const focused = focusedZone === 'backlog' && i === focusedIdx ? ' focused' : '';
+    const selected = selectedSet.has(t.id) ? ' selected' : '';
+    html += `
+      <div class="backlog-box${focused}${selected}" data-idx="${i}">
+        <textarea
+          id="bl-${t.id}"
+          data-task-id="${t.id}"
+          data-idx="${i}"
+          onfocus="onBacklogFocus(${i})"
+          oninput="autoResize(this); debounceSave('${t.id}', this.value)"
+          onkeydown="handleTaskKeydown(event)"
+        >${esc(t.prompt)}</textarea>
+        <span class="box-index">#${i + 1}</span>
+      </div>
+    `;
+  });
+  list.innerHTML = html;
+
+  // Auto-resize all textareas
+  list.querySelectorAll('textarea').forEach(ta => autoResize(ta));
+
+  // Focus the active backlog box
+  if (focusedZone === 'backlog') {
+    const target = list.querySelector(`textarea[data-idx="${focusedIdx}"]`);
+    if (target && document.activeElement.tagName !== 'TEXTAREA') {
+      suppressFocusClear();
+      focusTextareaAtEnd(target);
+    }
+  }
+}
+
+function todoPrimaryText(text = '') {
+  const idx = text.indexOf('\n');
+  return idx === -1 ? text : text.slice(0, idx);
+}
+
+function todoNotesText(text = '') {
+  const idx = text.indexOf('\n');
+  return idx === -1 ? '' : text.slice(idx + 1);
+}
+
+function mergeTodoPrimaryAndNotes(primary, notes) {
+  return notes !== '' ? `${primary}\n${notes}` : primary;
+}
+
+function findTodoById(todoId) {
+  for (const date of Object.keys(state.todos || {})) {
+    const todo = (state.todos[date] || []).find(t => t.id === todoId);
+    if (todo) return todo;
+  }
+  return null;
+}
+
+function todoForSession(sessionId = activeSession) {
+  const today = getTodayPacific();
+  const todos = state.todos ? todosForDate(today) : [];
+  for (let i = 0; i < todos.length; i++) {
+    const todo = todos[i];
+    if (todo.session === sessionId && !todo.done && !isTopicAt(todos, i)) return todo;
+  }
+  return null;
+}
+
+function renderNotes() {
+  const list = document.getElementById('notesList');
+  const count = document.getElementById('notesCount');
+  const todo = todoForSession(activeSession);
+  if (count) count.textContent = '';
+  if (!todo) {
+    list.innerHTML = '';
+    return;
+  }
+  const notes = todoNotesText(todo.text || '');
+  list.innerHTML = `
+    <div class="notes-box">
+      <textarea
+        id="notes-${todo.id}"
+        data-todo-id="${todo.id}"
+        oninput="autoResize(this); debounceTodoNotesSave(this)"
+      ></textarea>
+    </div>
+  `;
+  list.querySelectorAll('textarea').forEach(ta => {
+    ta.value = notes;
+    ta.dataset.baseText = todo.text || '';
+    ta.dataset.baseNotes = notes;
+    autoResize(ta);
+  });
+}
+
+function renderBottomBar() {
+  const s = state.sessions[activeSession];
+  if (!s) return;
+  const interruptBtn = document.getElementById('interruptBtn');
+  if (interruptBtn) interruptBtn.style.display = providerSupports('interrupt') ? 'inline-block' : 'none';
+  const planToggleEl = document.getElementById('planToggle');
+  if (planToggleEl) {
+    planToggleEl.style.display = providerSupports('plan') ? 'inline-block' : 'none';
+    planToggleEl.classList.toggle('active', providerSupports('plan') && planMode);
+  }
+  const options = [
+    `<option value="claude"${s.provider === 'claude' ? ' selected' : ''}>Claude Code</option>`,
+    `<option value="codex"${s.provider === 'codex' ? ' selected' : ''}>Codex</option>`
+  ].join('');
+  const providerHint = s.provider === 'codex'
+    ? `<span class="session-provider-hint" title="Start Codex in this pane with CC_HARNESS_SESSION=${activeSession} codex">CC_HARNESS_SESSION=${activeSession}</span>`
+    : '';
+  const providerTitle = s.provider === 'codex'
+    ? `Session provider. Start Codex in this pane with CC_HARNESS_SESSION=${activeSession} codex`
+    : 'Session provider';
+  const providerBadge = sessionProviderBadge(activeSession);
+  document.getElementById('sessionLabelArea').innerHTML =
+    `<span class="session-provider-inline">
+       <span class="session-provider-badge">${esc(providerBadge)}</span>
+       <select class="session-provider-select" onchange="changeSessionProvider(this.value)" title="${esc(providerTitle)}">
+         ${options}
+       </select>
+       ${providerHint}
+     </span>`;
+  renderPauseButton();
+}
+
+// ── Auto-resize textarea ──
+function autoResize(el) {
+  const scrollParent = el.closest('.main') || el.closest('.backlog-section');
+  const savedScroll = scrollParent ? scrollParent.scrollTop : 0;
+  el.style.height = 'auto';
+  el.style.height = Math.max(52, el.scrollHeight) + 'px';
+  if (scrollParent) scrollParent.scrollTop = savedScroll;
+}
+
+function autoResizeTodo(el) {
+  const scrollParent = el.closest('.todo-container');
+  const savedScroll = scrollParent ? scrollParent.scrollTop : 0;
+  el.style.height = 'auto';
+  const hasMultipleLines = el.value.includes('\n');
+  el.style.height = hasMultipleLines ? Math.max(24, el.scrollHeight) + 'px' : '24px';
+  if (scrollParent) scrollParent.scrollTop = savedScroll;
+}
+
+function renderTodoOverlayHTML(text, timerText = '') {
+  return text.split('\n').map((line, idx) => {
+    const cls = idx === 0 ? 'todo-text-overlay-line primary' : 'todo-text-overlay-line secondary';
+    const content = line ? esc(line) : '&nbsp;';
+    const timerHTML = idx === 0 && timerText
+      ? `<span class="todo-inline-timer">${esc(timerText)}</span>`
+      : '';
+    return `<span class="${cls}">${content}${timerHTML}</span>`;
+  }).join('');
+}
+
+function syncTodoTextOverlay(el) {
+  const overlay = el.previousElementSibling;
+  if (!overlay) return;
+  overlay.style.transform = `translateX(${-el.scrollLeft}px)`;
+}
+
+function updateTodoTextOverlay(el) {
+  const overlay = el.previousElementSibling;
+  if (!overlay) return;
+  const row = Number(el.dataset.todoRow);
+  const timerText = el.dataset.todoDate && !Number.isNaN(row)
+    ? todoRowTimerText(el.dataset.todoDate, row)
+    : '';
+  overlay.innerHTML = renderTodoOverlayHTML(el.value, timerText);
+  syncTodoTextOverlay(el);
+}
+
+// ── Debounced save ──
+let saveTimers = {};
+let planMode = false;
+function debounceSave(taskId, text) {
+  noteTextActivity();
+  historyIdx = -1; // Reset history browsing on any edit
+  clearTimeout(saveTimers[taskId]);
+  saveTimers[taskId] = setTimeout(() => {
+    api('PUT', `/api/task/${taskId}`, { prompt: text });
+  }, 500);
+}
+
+// ── Actions ──
+function switchSession(id) {
+  flushTextareaValues();
+  activeSession = id;
+  focusedZone = 'backlog';
+  focusedIdx = 0;
+  selectedSet.clear();
+  if (viewMode === 'todo') toggleView();
+  render();
+}
+
+function navigateSession(direction) {
+  const ids = Object.keys(state.sessions).sort();
+  const curIdx = ids.indexOf(activeSession);
+  const newIdx = (curIdx + direction + ids.length) % ids.length;
+  switchSession(ids[newIdx]);
+}
+
+function toggleView() {
+  if (viewMode === 'tasks') flushTextareaValues();
+  if (viewMode === 'todo') flushTodoValues();
+  viewMode = viewMode === 'tasks' ? 'todo' : 'tasks';
+  document.getElementById('tasksView').style.display = viewMode === 'tasks' ? 'flex' : 'none';
+  document.getElementById('todoView').style.display = viewMode === 'todo' ? 'flex' : 'none';
+  document.activeElement?.blur();  // clear stale focus from previous view
+  renderTabs();
+  if (viewMode === 'todo') renderTodos();
+  if (viewMode === 'tasks') render();
+}
+
+// ── Todo functions ──
+function getTodayPacific() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' });
+}
+
+function todosForDate(date) {
+  return (state.todos && state.todos[date]) || [];
+}
+
+function renderTodos() {
+  const container = document.getElementById('todoContainer');
+  if (!state.todos) { container.innerHTML = ''; return; }
+
+  const today = getTodayPacific();
+  // Sort dates descending (today first, then older)
+  const dates = Object.keys(state.todos).sort().reverse();
+
+  let html = '';
+  for (const date of dates) {
+    const todos = state.todos[date];
+    if (todos.length === 0) continue;
+    const isToday = date === today;
+    const doneCount = todos.filter(t => t.done).length;
+    const totalCount = todos.length;
+    const label = isToday ? `${date} (Today)` : date;
+
+    const timerText = todoDateTimerText(date);
+    const tokenTargetText = todoDateTokenTargetText(date);
+
+    html += `<div class="todo-date-header${isToday ? '' : ' past'}">
+      <span class="todo-date-title">${label}<span class="todo-date-timer" data-todo-date="${date}">${timerText}</span><span class="todo-date-target" title="Claude weekly pacing target toward reset on Apr 9, 2026 at 10:00 PM America/Los_Angeles">${tokenTargetText}</span><button class="todo-date-blocks-btn" type="button" onclick="openTimeBlocksModal('${date}')">Blocks</button></span>
+      <span class="date-stats">${doneCount}/${totalCount}</span>
+    </div>`;
+
+    todos.forEach((todo, i) => {
+      const doneClass = todo.done ? ' done-todo' : '';
+      // Only show focus indicator for today's todos
+      const focused = isToday && i === focusedTodoIdx ? ' focused' : '';
+      const selected = isToday && selectedTodoSet.has(i) ? ' selected' : '';
+      const globalIdx = isToday ? i : -1;
+      const indent = todo.indent || 0;
+      const indentClass = indent > 0 ? ' indented' : '';
+
+      // Derive topic status: indent=0 and next item has indent>0
+      const isTopic = indent === 0 && i + 1 < todos.length && (todos[i + 1].indent || 0) > 0;
+      let sessLabel, sessClass;
+      if (todo.done) {
+        sessLabel = '--';
+        sessClass = ' empty';
+      } else {
+        sessLabel = todo.session ? todo.session : '--';
+        sessClass = todo.session ? '' : ' empty';
+      }
+      const leadingControl = isTopic
+        ? '<span class="todo-topic-marker">T</span>'
+        : `<input type="checkbox" class="todo-check"
+            ${todo.done ? 'checked' : ''}
+            onchange="toggleTodoDone('${todo.id}')">`;
+      const sessionBadge = isTopic
+        ? ''
+        : `<span class="todo-session-badge${sessClass}">${sessLabel}</span>`;
+
+      html += `
+        <div class="todo-item${doneClass}${focused}${selected}${indentClass}${isTopic ? ' topic' : ''}" data-todo-idx="${globalIdx}" ${isToday ? `onclick="focusTodoRow(event, ${i})"` : ''}>
+          ${leadingControl}
+          ${sessionBadge}
+          <div class="todo-text-wrap">
+            <div class="todo-text-overlay" aria-hidden="true"></div>
+            <textarea
+              id="todo-${todo.id}"
+              data-todo-id="${todo.id}"
+              data-todo-date="${date}"
+              data-todo-row="${i}"
+              data-todo-idx="${globalIdx}"
+              ${isToday ? `onfocus="onTodoFocus(${i})"` : ''}
+              oninput="autoResizeTodo(this); updateTodoTextOverlay(this); debounceTodoSave('${todo.id}', this.value)"
+              onscroll="syncTodoTextOverlay(this)"
+              onkeydown="handleTodoKeydown(event)"
+              ${!isToday ? 'readonly' : ''}
+            ></textarea>
+          </div>
+          ${isToday ? `<span class="todo-idx">#${i + 1}</span>` : ''}
+        </div>
+      `;
+    });
+  }
+  container.innerHTML = html;
+  container.querySelectorAll('.todo-item textarea').forEach(ta => {
+    const todo = findTodoById(ta.dataset.todoId);
+    ta.value = todo?.text || '';
+    autoResizeTodo(ta);
+    updateTodoTextOverlay(ta);
+  });
+
+  // Always restore focus to the active todo textarea
+  if (viewMode === 'todo') {
+    const target = document.querySelector(`textarea[data-todo-idx="${focusedTodoIdx}"]`);
+    if (target && document.activeElement !== target) {
+      suppressFocusClear();
+      focusTextareaAtEnd(target);
+    }
+  }
+  renderTodoTimers();
+}
+
+function onTodoFocus(idx) {
+  if (_suppressFocusClear) {
+    focusedTodoIdx = idx;
+    return;
+  }
+  // Plain textarea focus should collapse to a single focused row.
+  selectedTodoSet.clear();
+  todoSelectionAnchor = null;
+  focusedTodoIdx = idx;
+  applyTodoSelectionVisuals();
+}
+
+function applyTodoSelectionVisuals() {
+  document.querySelectorAll('.todo-item').forEach(el => {
+    const i = Number(el.dataset.todoIdx);
+    if (Number.isNaN(i) || i < 0) return;
+    el.classList.toggle('focused', i === focusedTodoIdx);
+    el.classList.toggle('selected', selectedTodoSet.has(i));
+  });
+}
+
+function focusTodoRow(event, idx) {
+  if (event.target.closest('.todo-check')) return;
+  const clickedTextarea = !!event.target.closest('textarea');
+  if (event.shiftKey) {
+    if (todoSelectionAnchor === null) todoSelectionAnchor = focusedTodoIdx;
+    focusedTodoIdx = idx;
+    selectedTodoSet.clear();
+    const lo = Math.min(todoSelectionAnchor, focusedTodoIdx);
+    const hi = Math.max(todoSelectionAnchor, focusedTodoIdx);
+    for (let i = lo; i <= hi; i++) selectedTodoSet.add(i);
+  } else {
+    selectedTodoSet.clear();
+    todoSelectionAnchor = null;
+    focusedTodoIdx = idx;
+  }
+  applyTodoSelectionVisuals();
+  const ta = document.querySelector(`textarea[data-todo-idx="${idx}"]`);
+  if (!ta || clickedTextarea) return;
+  suppressFocusClear();
+  ta.focus();
+}
+
+function debounceTodoSave(todoId, text) {
+  noteTextActivity();
+  clearTimeout(todoSaveTimers[todoId]);
+  todoSaveTimers[todoId] = setTimeout(async () => {
+    await api('PUT', `/api/todo/${todoId}`, { text });
+  }, 500);
+}
+
+function debounceTodoNotesSave(ta) {
+  noteTextActivity();
+  const todoId = ta.dataset.todoId;
+  const todo = findTodoById(todoId);
+  if (!todo) return;
+  const notes = ta.value;
+  const baseText = ta.dataset.baseText ?? (todo.text || '');
+  const baseNotes = ta.dataset.baseNotes ?? todoNotesText(baseText);
+  if (notes === baseNotes) {
+    const needsRestore = todo.text !== baseText;
+    todo.text = baseText;
+    clearTimeout(todoSaveTimers[todoId]);
+    if (needsRestore) {
+      todoSaveTimers[todoId] = setTimeout(async () => {
+        await api('PUT', `/api/todo/${todoId}`, { text: baseText });
+      }, 500);
+    }
+    return;
+  }
+  const merged = mergeTodoPrimaryAndNotes(todoPrimaryText(todo.text || ''), notes);
+  todo.text = merged;
+  clearTimeout(todoSaveTimers[todoId]);
+  todoSaveTimers[todoId] = setTimeout(async () => {
+    await api('PUT', `/api/todo/${todoId}`, { text: merged });
+    ta.dataset.baseText = merged;
+    ta.dataset.baseNotes = notes;
+  }, 500);
+}
+
+function flushTodoValues() {
+  document.querySelectorAll('.todo-item textarea').forEach(ta => {
+    const todoId = ta.dataset.todoId;
+    if (!todoId) return;
+    const today = getTodayPacific();
+    const todos = state.todos && state.todos[today];
+    if (!todos) return;
+    const todo = todos.find(t => t.id === todoId);
+    if (todo && todo.text !== ta.value) {
+      todo.text = ta.value;
+      clearTimeout(todoSaveTimers[todoId]);
+      api('PUT', `/api/todo/${todoId}`, { text: ta.value });
+    }
+  });
+}
+
+function flushNotesValues() {
+  document.querySelectorAll('.notes-box textarea').forEach(ta => {
+    const todoId = ta.dataset.todoId;
+    if (!todoId) return;
+    const todo = findTodoById(todoId);
+    if (!todo) return;
+    const baseText = ta.dataset.baseText ?? (todo.text || '');
+    const baseNotes = ta.dataset.baseNotes ?? todoNotesText(baseText);
+    if (ta.value === baseNotes) {
+      const needsRestore = todo.text !== baseText;
+      todo.text = baseText;
+      clearTimeout(todoSaveTimers[todoId]);
+      if (needsRestore) {
+        api('PUT', `/api/todo/${todoId}`, { text: baseText });
+      }
+      return;
+    }
+    const merged = mergeTodoPrimaryAndNotes(todoPrimaryText(todo.text || ''), ta.value);
+    if (todo.text !== merged) {
+      todo.text = merged;
+      clearTimeout(todoSaveTimers[todoId]);
+      api('PUT', `/api/todo/${todoId}`, { text: merged });
+      ta.dataset.baseText = merged;
+      ta.dataset.baseNotes = ta.value;
+    }
+  });
+}
+
+async function toggleTodoDone(todoId) {
+  flushTodoValues();
+  const today = getTodayPacific();
+  const todos = todosForDate(today);
+  const idx = todos.findIndex(t => t.id === todoId);
+  const sessionId = idx !== -1 ? todos[idx].session : null;
+  if (idx !== -1) {
+    snapshotTodoDuration(todos[idx]);
+    delete todoSessionStart[todoId];
+  }
+  persistTimers();
+  const res = await api('POST', `/api/todo/${todoId}/toggle`);
+  if (res.done && sessionId) {
+    sessionElapsed[sessionId] = 0;
+    persistTimers();
+  }
+  if (res.archived_count) {
+    toast(`Archived ${res.archived_count} task(s) from Session ${res.archived_session || '?'}`);
+  } else if (res.restored_count) {
+    toast(`Restored ${res.restored_count} task(s) to Session ${res.restored_to_session || '?'}`);
+  }
+  await refreshTodos();
+  await refresh();
+  renderTimerDisplays();
+}
+
+async function addNewTodo() {
+  flushTodoValues();
+  const today = getTodayPacific();
+  const todos = todosForDate(today);
+  const current = todos[focusedTodoIdx];
+  const afterId = current ? current.id : null;
+  // Inherit indent from current item (new item after a sub-todo is also a sub-todo)
+  const indent = current ? (current.indent || 0) : 0;
+  await api('POST', '/api/todo', { text: '', after_id: afterId, indent });
+  await refreshTodos();
+  focusedTodoIdx = afterId ? focusedTodoIdx + 1 : 0;
+  renderTodos();
+  const ta = document.querySelector(`textarea[data-todo-idx="${focusedTodoIdx}"]`);
+  if (ta) focusTextareaAtEnd(ta);
+}
+
+async function deleteTodo() {
+  const today = getTodayPacific();
+  const todos = todosForDate(today);
+  const notDone = todos.filter(t => !t.done);
+  if (notDone.length <= 1) return;
+  const todo = todos[focusedTodoIdx];
+  if (!todo || todo.done) return;
+  await api('DELETE', `/api/todo/${todo.id}`);
+  delete todoElapsed[todo.id];
+  delete todoSessionStart[todo.id];
+  persistTimers();
+  // Stay at same index unless we deleted the bottom row
+  const newTodos = todosForDate(today);
+  if (focusedTodoIdx >= newTodos.length) focusedTodoIdx = Math.max(0, newTodos.length - 1);
+  await refreshTodos();
+}
+
+async function clearTodoContent() {
+  const today = getTodayPacific();
+  const todos = todosForDate(today);
+  const todo = todos[focusedTodoIdx];
+  if (!todo || todo.done) return;
+  await api('PUT', `/api/todo/${todo.id}`, { text: '', session: null });
+  delete todoElapsed[todo.id];
+  delete todoSessionStart[todo.id];
+  persistTimers();
+  await refreshTodos();
+  suppressFocusClear();
+  const ta = document.querySelector(`textarea[data-todo-idx="${focusedTodoIdx}"]`);
+  if (ta) focusTextareaAtEnd(ta);
+}
+
+function navigateTodo(direction) {
+  const today = getTodayPacific();
+  const todos = todosForDate(today);
+  if (todos.length === 0) return;
+  const newIdx = focusedTodoIdx + direction;
+  if (newIdx < 0 || newIdx >= todos.length) return;
+  flushTodoValues();
+  selectedTodoSet.clear();
+  todoSelectionAnchor = null;
+  focusedTodoIdx = newIdx;
+  renderTodos();
+  const ta = document.querySelector(`textarea[data-todo-idx="${focusedTodoIdx}"]`);
+  if (ta) focusTextareaAtEnd(ta);
+}
+
+function multiSelectTodo(direction) {
+  const today = getTodayPacific();
+  const todos = todosForDate(today);
+  if (todos.length === 0) return;
+  // Set anchor on first Shift+Arrow press
+  if (todoSelectionAnchor === null) {
+    todoSelectionAnchor = focusedTodoIdx;
+  }
+  const newIdx = focusedTodoIdx + direction;
+  if (newIdx < 0 || newIdx >= todos.length) return;
+  focusedTodoIdx = newIdx;
+  // Selection = range from anchor to cursor (inclusive)
+  selectedTodoSet.clear();
+  const lo = Math.min(todoSelectionAnchor, focusedTodoIdx);
+  const hi = Math.max(todoSelectionAnchor, focusedTodoIdx);
+  for (let i = lo; i <= hi; i++) selectedTodoSet.add(i);
+  renderTodos();
+  suppressFocusClear();
+  const ta = document.querySelector(`textarea[data-todo-idx="${focusedTodoIdx}"]`);
+  if (ta) focusTextareaAtEnd(ta);
+}
+
+async function reorderTodo(direction) {
+  const today = getTodayPacific();
+  const todos = todosForDate(today);
+  // Cancel any pending compaction saves before reordering
+  for (const id in todoSaveTimers) clearTimeout(todoSaveTimers[id]);
+  flushTodoValues();
+
+  // Batch mode: move selected block as a unit
+  if (selectedTodoSet.size > 0) {
+    // Expand selection to include full clusters
+    for (const idx of [...selectedTodoSet]) {
+      const [cs, ce] = getClusterRange(todos, idx);
+      for (let j = cs; j <= ce; j++) selectedTodoSet.add(j);
+    }
+    const positions = [...selectedTodoSet].sort((a, b) => a - b);
+    const minPos = positions[0];
+    const maxPos = positions[positions.length - 1];
+    const isContiguous = (maxPos - minPos + 1) === positions.length;
+    // Boundary check only for contiguous moves (consolidation is always valid)
+    if (isContiguous) {
+      if (direction === -1 && minPos === 0) return;
+      if (direction === 1 && maxPos >= todos.length - 1) return;
+    }
+    // Track by ID so we can find new positions after reorder
+    const selectedIds = positions.map(p => todos[p].id);
+    const focusedId = todos[focusedTodoIdx]?.id;
+    const indices = positions.map(p => p);
+    const res = await api('POST', '/api/todo/batch-reorder', { indices, direction });
+    if (res.error) return;
+    await refreshTodos();
+    // Find new positions by ID
+    const newTodos = todosForDate(getTodayPacific());
+    selectedTodoSet.clear();
+    for (let i = 0; i < newTodos.length; i++) {
+      if (selectedIds.includes(newTodos[i].id)) selectedTodoSet.add(i);
+      if (newTodos[i].id === focusedId) focusedTodoIdx = i;
+    }
+    if (todoSelectionAnchor !== null) {
+      const newPositions = [...selectedTodoSet].sort((a, b) => a - b);
+      todoSelectionAnchor = direction === -1 ? newPositions[newPositions.length - 1] : newPositions[0];
+    }
+    renderTodos();
+    suppressFocusClear();
+    const ta = document.querySelector(`textarea[data-todo-idx="${focusedTodoIdx}"]`);
+    if (ta) focusTextareaAtEnd(ta);
+    return;
+  }
+
+  // Within-cluster subtask reorder (cycling)
+  const focusedIndent = todos[focusedTodoIdx]?.indent || 0;
+  if (focusedIndent > 0) {
+    const [clusterStart, clusterEnd] = getClusterRange(todos, focusedTodoIdx);
+    const subtaskStart = clusterStart + 1;
+    const subtaskEnd = clusterEnd;
+    if (subtaskStart === subtaskEnd) return; // single subtask → no-op
+    let targetIdx;
+    if (direction === -1) {
+      targetIdx = focusedTodoIdx === subtaskStart ? subtaskEnd : focusedTodoIdx - 1;
+    } else {
+      targetIdx = focusedTodoIdx === subtaskEnd ? subtaskStart : focusedTodoIdx + 1;
+    }
+    await api('POST', '/api/todo/reposition', { index: focusedTodoIdx, target_index: targetIdx });
+    focusedTodoIdx = targetIdx;
+    await refreshTodos();
+    suppressFocusClear();
+    const ta = document.querySelector(`textarea[data-todo-idx="${focusedTodoIdx}"]`);
+    if (ta) focusTextareaAtEnd(ta);
+    return;
+  }
+
+  // Single item mode → cluster-aware
+  const [myStart, myEnd] = getClusterRange(todos, focusedTodoIdx);
+  if (direction === -1 && myStart === 0) return;
+  if (direction === 1 && myEnd >= todos.length - 1) return;
+  const adjIdx = direction === -1 ? myStart - 1 : myEnd + 1;
+  const [adjStart, adjEnd] = getClusterRange(todos, adjIdx);
+  await api('POST', '/api/todo/swap-clusters', {
+    rangeA: direction === -1 ? [adjStart, adjEnd] : [myStart, myEnd],
+    rangeB: direction === -1 ? [myStart, myEnd] : [adjStart, adjEnd]
+  });
+  const adjSize = adjEnd - adjStart + 1;
+  focusedTodoIdx += direction * adjSize;
+  await refreshTodos();
+  suppressFocusClear();
+  const ta = document.querySelector(`textarea[data-todo-idx="${focusedTodoIdx}"]`);
+  if (ta) focusTextareaAtEnd(ta);
+}
+
+function reorderBacklog(direction) {
+  const run = backlogReorderQueue
+    .catch(() => {})
+    .then(() => reorderBacklogNow(direction))
+    .catch(err => {
+      console.error('reorderBacklog failed:', err);
+      toast('Error: ' + err.message, true);
+    });
+  backlogReorderQueue = run;
+  return run;
+}
+
+async function reorderBacklogNow(direction) {
+  const blItems = tasksFor(activeSession, 'backlog');
+  if (focusedZone !== 'backlog') return;
+  flushTextareaValues();
+
+  // Batch mode: move selected block as a unit
+  if (selectedSet.size > 0) {
+    const selectedBl = blItems.filter(t => selectedSet.has(t.id));
+    if (selectedBl.length === 0) return;
+    const positions = selectedBl.map(t => blItems.indexOf(t));
+    const minPos = Math.min(...positions);
+    const maxPos = Math.max(...positions);
+    const isContiguous = (maxPos - minPos + 1) === positions.length;
+    // Boundary check only for contiguous moves (consolidation is always valid)
+    if (isContiguous) {
+      if (direction === -1 && minPos === 0) return;
+      if (direction === 1 && maxPos >= blItems.length - 1) return;
+    }
+    // Track by ID so we can find new positions after reorder
+    const selectedIds = selectedBl.map(t => t.id);
+    const focusedId = blItems[focusedIdx]?.id;
+    await api('POST', '/api/task/batch-reorder', { task_ids: selectedIds, direction, session: activeSession });
+    await refresh();
+    // Find new positions by ID
+    const newBlItems = tasksFor(activeSession, 'backlog');
+    selectedSet.clear();
+    for (let i = 0; i < newBlItems.length; i++) {
+      if (selectedIds.includes(newBlItems[i].id)) selectedSet.add(newBlItems[i].id);
+      if (newBlItems[i].id === focusedId) focusedIdx = i;
+    }
+    // Update anchor to stay at the boundary of the moved block
+    if (selectionAnchor !== null) {
+      const newPositions = [];
+      for (let i = 0; i < newBlItems.length; i++) {
+        if (selectedIds.includes(newBlItems[i].id)) newPositions.push(i);
+      }
+      selectionAnchor = direction === -1 ? newPositions[newPositions.length - 1] : newPositions[0];
+    }
+    render();
+    return;
+  }
+
+  // Single item mode
+  if (focusedIdx < 0 || focusedIdx >= blItems.length) return;
+  const swapIdx = focusedIdx + direction;
+  if (swapIdx < 0 || swapIdx >= blItems.length) return;
+  const taskId = blItems[focusedIdx].id;
+  await api('POST', '/api/task/reorder', { task_id: taskId, direction, session: activeSession });
+  focusedIdx = swapIdx;
+  await refresh();
+  const newBlItems = tasksFor(activeSession, 'backlog');
+  if (newBlItems[swapIdx]) {
+    const ta = document.getElementById(`bl-${newBlItems[swapIdx].id}`);
+    if (ta) {
+      focusTextareaAtEnd(ta);
+      const blEl = ta.closest('.backlog-item'); if (blEl) scrollFullyIntoView(blEl);
+    }
+  }
+}
+
+function isTopicAt(todos, idx) {
+  return (todos[idx].indent || 0) === 0 && idx + 1 < todos.length && (todos[idx + 1].indent || 0) > 0;
+}
+
+function getClusterRange(todos, idx) {
+  // Walk up past indented rows to find the cluster start
+  let start = idx;
+  while (start > 0 && (todos[start].indent || 0) > 0) start--;
+  // Walk down past consecutive indented rows to find the cluster end
+  let end = start;
+  while (end + 1 < todos.length && (todos[end + 1].indent || 0) > 0) end++;
+  return [start, end];
+}
+
+function getOccupiedSessions(excludeTodoId) {
+  // Returns Set of session IDs assigned to undone non-topic todos (excluding the given todo)
+  const occupied = new Set();
+  const today = getTodayPacific();
+  const todos = todosForDate(today);
+  for (let i = 0; i < todos.length; i++) {
+    const t = todos[i];
+    if (t.id !== excludeTodoId && !t.done && t.session && !isTopicAt(todos, i)) {
+      occupied.add(t.session);
+    }
+  }
+  return occupied;
+}
+
+async function cycleTodoSession(direction) {
+  flushTodoValues();
+  const today = getTodayPacific();
+  const todos = todosForDate(today);
+  if (todos.length === 0) return;
+  const todo = todos[focusedTodoIdx];
+  if (!todo || todo.done) return;
+  if (isTopicAt(todos, focusedTodoIdx)) return;  // topics don't have sessions
+
+  // Don't allow changing session if it already has active work
+  if (todo.session) {
+    const hasWork = tasksFor(todo.session, 'in_progress').length > 0
+                || tasksFor(todo.session, 'done').length > 0;
+    if (hasWork) {
+      toast('Session has active work — flush first', true);
+      return;
+    }
+  }
+
+  const occupied = getOccupiedSessions(todo.id);
+  const allSessions = Object.keys(state.sessions).sort();
+  // Build list of available options: null + free sessions
+  const options = [null, ...allSessions.filter(s => !occupied.has(s))];
+
+  const curIdx = todo.session ? options.indexOf(todo.session) : 0;
+  let newIdx = curIdx + direction;
+  if (newIdx < 0) newIdx = options.length - 1;
+  if (newIdx >= options.length) newIdx = 0;
+
+  const newSession = options[newIdx];
+  const nextElapsed = currentTodoDuration(todo);
+  await api('PUT', `/api/todo/${todo.id}`, { session: newSession });
+  todoElapsed[todo.id] = nextElapsed;
+  beginTodoSessionTimer(todo.id, newSession);
+  persistTimers();
+  state = await api('GET', '/api/state');  // refresh to pick up migrated tasks
+  renderTodos();
+  const ta = document.querySelector(`textarea[data-todo-idx="${focusedTodoIdx}"]`);
+  if (ta) focusTextareaAtEnd(ta);
+}
+
+async function setTodoIndent(newIndent) {
+  const today = getTodayPacific();
+  const todos = todosForDate(today);
+  if (todos.length === 0) return;
+  const todo = todos[focusedTodoIdx];
+  if (!todo || todo.done) return;
+
+  if (newIndent === 1) {
+    // Can't indent the first item (nothing above to be a sub-todo of)
+    if (focusedTodoIdx === 0) return;
+    // Can't indent if item above is also indented (need a top-level parent)
+    const above = todos[focusedTodoIdx - 1];
+    if ((above.indent || 0) > 0) {
+      // It's fine — there's a topic somewhere above; allow nesting under the same topic
+      // But we still need at least one indent=0 item above in the chain
+      let hasParent = false;
+      for (let j = focusedTodoIdx - 1; j >= 0; j--) {
+        if ((todos[j].indent || 0) === 0) { hasParent = true; break; }
+      }
+      if (!hasParent) return;
+    }
+  }
+
+  if ((todo.indent || 0) === newIndent) return;  // no change
+  todo.indent = newIndent;
+  await api('PUT', `/api/todo/${todo.id}`, { indent: newIndent });
+  renderTodos();
+  const ta = document.querySelector(`textarea[data-todo-idx="${focusedTodoIdx}"]`);
+  if (ta) focusTextareaAtEnd(ta);
+}
+
+async function todoOptEnter() {
+  const today = getTodayPacific();
+  const todos = todosForDate(today);
+  if (todos.length === 0) return;
+  const todo = todos[focusedTodoIdx];
+  if (!todo) return;
+
+  if (todo.done) return;  // Must uncheck first to revive
+
+  if (!todo.session) {
+    toast('Assign a session first (Opt+Left/Right)', true);
+    return;
+  }
+  // Recall archived tasks to the assigned session (no-op if no archive)
+  const recall = await api('POST', `/api/todo/${todo.id}/recall`);
+  if (recall.recalled_count) {
+    toast(`Recalled ${recall.recalled_count} task(s) to Session ${todo.session}`);
+  }
+  // Switch to tasks view at the assigned session
+  flushTodoValues();
+  viewMode = 'tasks';
+  activeSession = todo.session;
+  focusedZone = 'backlog';
+  focusedIdx = 0;
+  document.getElementById('tasksView').style.display = 'flex';
+  document.getElementById('todoView').style.display = 'none';
+  render();
+}
+
+async function toggleFocusedTodoDone() {
+  const today = getTodayPacific();
+  const todos = todosForDate(today);
+  if (todos.length === 0) return;
+  const todo = todos[focusedTodoIdx];
+  if (!todo) return;
+  await toggleTodoDone(todo.id);
+}
+
+async function refreshTodos() {
+  try {
+    state = await api('GET', '/api/state');
+    if (viewMode === 'todo') renderTodos();
+    else renderTodoTimers();
+  } catch (e) {}
+}
+
+function handleTodoKeydown(event) {
+  const ta = event.target;
+  // TAB: indent (make sub-todo) / Shift+TAB: un-indent
+  if (event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey) {
+    event.preventDefault();
+    event.stopPropagation();
+    setTodoIndent(event.shiftKey ? 0 : 1);
+    return;
+  }
+  if (event.metaKey && !event.shiftKey && event.key === 'Enter') {
+    event.preventDefault();
+    event.stopPropagation();
+    todoOptEnter();
+    return;
+  }
+  // Shift+Arrow Up/Down: multi-select todo rows
+  if (!event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey &&
+      (event.key === 'ArrowUp' || event.key === 'ArrowDown') &&
+      ta.tagName === 'TEXTAREA' && isOnTodoPrimaryLine(ta)) {
+    event.preventDefault();
+    event.stopPropagation();
+    multiSelectTodo(event.key === 'ArrowUp' ? -1 : 1);
+    return;
+  }
+  // Opt+Arrow Up/Down: reorder todo slot (batch if multi-selected)
+  if (event.altKey && !event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+    event.preventDefault();
+    event.stopPropagation();
+    reorderTodo(event.key === 'ArrowUp' ? -1 : 1);
+    return;
+  }
+  // Plain Arrow Up/Down: navigate between todo rows at textarea boundaries
+  if (!event.altKey && !event.ctrlKey && !event.metaKey && ta.tagName === 'TEXTAREA') {
+    if (event.key === 'ArrowUp' && isAtFirstLine(ta)) {
+      event.preventDefault();
+      event.stopPropagation();
+      navigateTodo(-1);
+    } else if (event.key === 'ArrowDown' && isAtLastLine(ta)) {
+      event.preventDefault();
+      event.stopPropagation();
+      navigateTodo(1);
+    }
+  }
+}
+
+function onBacklogFocus(idx) {
+  if (_suppressFocusClear) {
+    focusedZone = 'backlog';
+    focusedIdx = idx;
+    return;
+  }
+  selectedSet.clear();
+  selectionAnchor = null;
+  focusedZone = 'backlog';
+  focusedIdx = idx;
+  // Update visual focus indicators without full re-render
+  document.querySelectorAll('.backlog-box').forEach(el => {
+    el.classList.toggle('focused', parseInt(el.dataset.idx) === idx);
+  });
+  document.querySelectorAll('.inprogress-item').forEach(el => {
+    el.classList.remove('focused');
+  });
+}
+
+async function createEmptyBacklog(count = 1, sessionId = activeSession) {
+  for (let i = 0; i < count; i++) {
+    await api('POST', '/api/task', { prompt: '', session: sessionId });
+  }
+  await refresh();
+}
+
+async function ensureBacklogMinimumRows(sessionId = activeSession) {
+  const deficit = MIN_BACKLOG_ROWS - tasksFor(sessionId, 'backlog').length;
+  if (deficit <= 0) return false;
+  await createEmptyBacklog(deficit, sessionId);
+  return true;
+}
+
+function getPromptHistory() {
+  // Returns previously pushed prompts for active session, newest first (LIFO)
+  const pushed = state.tasks.filter(t =>
+    t.session === activeSession && (t.state === 'in_progress' || t.state === 'done') && t.prompt.trim()
+  );
+  pushed.sort((a, b) => (b.started_at || '').localeCompare(a.started_at || ''));
+  return pushed.map(t => t.prompt);
+}
+
+function browseHistory(direction) {
+  // direction: -1 = older (Up), 1 = newer (Down)
+  const history = getPromptHistory();
+  if (history.length === 0) return false;
+  // Stash original text when starting to browse
+  if (historyIdx === -1 && direction === -1) {
+    const blItems = tasksFor(activeSession, 'backlog');
+    if (blItems[0]) {
+      const ta = document.getElementById(`bl-${blItems[0].id}`);
+      historyOriginalText = ta ? ta.value : '';
+    }
+  }
+  const newIdx = historyIdx + (direction === -1 ? 1 : -1);
+  if (newIdx < 0) {
+    // Back to original text — restore
+    historyIdx = -1;
+    const blItems = tasksFor(activeSession, 'backlog');
+    if (blItems[0]) {
+      const ta = document.getElementById(`bl-${blItems[0].id}`);
+      if (ta) { ta.value = historyOriginalText || ''; focusTextareaAtEnd(ta); }
+    }
+    historyOriginalText = null;
+    return true;
+  }
+  if (newIdx >= history.length) return false;
+  historyIdx = newIdx;
+  const blItems = tasksFor(activeSession, 'backlog');
+  if (blItems[0]) {
+    const ta = document.getElementById(`bl-${blItems[0].id}`);
+    if (ta) { ta.value = history[historyIdx]; focusTextareaAtEnd(ta); }
+  }
+  return true;
+}
+
+async function approveSession(event) {
+  if (event) event.stopPropagation();
+  if (!providerSupports('approval_ui')) {
+    toast('Approval is not available for this session provider', true);
+    return;
+  }
+  try {
+    const res = await api('POST', `/api/session/${activeSession}/approve`);
+    if (res.error) {
+      toast('Approve failed: ' + res.error, true);
+      await refresh();
+      return;
+    }
+    toast('Plan approved');
+    await refresh();
+  } catch (err) {
+    toast('Approve failed: ' + err.message, true);
+  }
+}
+
+async function yesSession(event) {
+  if (event) event.stopPropagation();
+  if (!providerSupports('permission_ui')) {
+    toast('Permission approval is not available for this session provider', true);
+    return;
+  }
+  try {
+    const res = await api('POST', `/api/session/${activeSession}/yes`);
+    if (res.error) {
+      toast('Permission approval failed: ' + res.error, true);
+      await refresh();
+      return;
+    }
+    toast('Permission approved');
+    await refresh();
+  } catch (err) {
+    toast('Permission approval failed: ' + err.message, true);
+  }
+}
+
+// ── Cmd+Shift+Enter multi-tap state ──
+let cmdShiftEnterCount = 0;
+let cmdShiftEnterTimer = null;
+
+function cmdShiftEnterResolve(taps) {
+  if (!providerSupports('plan')) {
+    toast('Plan shortcuts are only available for Claude Code sessions', true);
+    return;
+  }
+  // 1 tap = sonnet plan+exec, 2 taps = opus plan + sonnet exec, 3 taps = opus ultrathink, 4+ taps = opus team
+  let params, label;
+  if (taps >= 4)       { params = '?plan=1&model=opus&prefix=team';          label = 'team'; }
+  else if (taps === 3) { params = '?plan=1&model=opus&prefix=ultrathink';    label = 'ultrathink'; }
+  else if (taps === 2) { params = '?plan=1&model=opus&execmodel=sonnet';     label = 'opus→sonnet'; }
+  else                 { params = '?plan=1&model=sonnet';                    label = 'sonnet'; }
+
+  toast(`Sending (${label} mode)`);
+
+  if (viewMode === 'tasks') handleCmdEnter(params);
+  else if (viewMode === 'todo') todoOptEnter();
+}
+
+function getPushParams(overrideParams) {
+  if (!providerSupports('plan')) return '';
+  if (overrideParams) return overrideParams;
+  return planMode ? '?plan=1' : '';
+}
+
+function cmdEnterTaskZone() {
+  return focusedZone === 'ip' ? 'ip' : 'backlog';
+}
+
+async function handleCmdEnter(overrideParams) {
+  const sessionId = activeSession;
+  const zone = cmdEnterTaskZone();
+
+  // Batch mode: if multi-selected, process all selected items
+  if (selectedSet.size > 0) {
+    const ipItems = tasksFor(sessionId, 'in_progress');
+    const blItems = tasksFor(sessionId, 'backlog');
+    const selectedIp = ipItems.filter(t => selectedSet.has(t.id));
+    const selectedBl = blItems.filter(t => selectedSet.has(t.id));
+
+    // Mark selected in-progress items as done (single commit for the batch)
+    for (let i = 0; i < selectedIp.length; i++) {
+      const isLast = i === selectedIp.length - 1;
+      await api('POST', `/api/task/${selectedIp[i].id}/done${isLast ? '' : '?no_commit'}`);
+    }
+    // Send selected backlog items as a single concatenated in-progress task
+    flushTextareaValues();
+    if (selectedBl.length > 0) {
+      const prompts = [];
+      for (const t of selectedBl) {
+        const ta = document.getElementById(`bl-${t.id}`);
+        const prompt = ta ? ta.value.trim() : t.prompt.trim();
+        if (prompt) prompts.push(prompt);
+      }
+      if (prompts.length > 0) {
+        const combined = prompts.join('\n\n');
+        const firstTask = selectedBl[0];
+        await api('PUT', `/api/task/${firstTask.id}`, { prompt: combined });
+        await api('POST', `/api/task/${firstTask.id}/start${getPushParams(overrideParams)}`);
+        // Delete the remaining selected backlog tasks
+        for (let i = 1; i < selectedBl.length; i++) {
+          await api('DELETE', `/api/task/${selectedBl[i].id}`);
+        }
+      }
+    }
+
+    const count = selectedIp.length + selectedBl.length;
+    selectedSet.clear();
+    focusedZone = 'backlog'; focusedIdx = 0;
+    await refresh();
+    if (selectedBl.length > 0) await ensureBacklogMinimumRows(sessionId);
+    if (selectedIp.length > 0) await autoGenerateTodoIfNeeded(sessionId);
+    if (selectedBl.length > 0) {
+      const ipSection = document.getElementById('inprogressSection');
+      if (ipSection) ipSection.scrollTop = ipSection.scrollHeight;
+    }
+    toast(`${count} items processed`);
+    return;
+  }
+
+  // Single item mode
+  if (zone === 'ip') {
+    const items = ipSorted(activeSession);
+    if (items.length === 0) return;
+    const task = items[focusedIdx];
+    if (!task) return;
+    await markDone(task.id);
+    if (focusedIdx >= ipSorted(activeSession).length) {
+      const bl = tasksFor(activeSession, 'backlog');
+      if (bl.length > 0) { focusedZone = 'backlog'; focusedIdx = 0; }
+      else if (ipSorted(activeSession).length > 0) { focusedIdx--; }
+      else { focusedZone = 'backlog'; focusedIdx = 0; }
+    }
+    render();
+  } else {
+    await sendFocusedToPane(overrideParams);
+  }
+}
+
+async function sendFocusedToPane(overrideParams) {
+  try {
+    const sessionId = activeSession;
+    // Capture text from DOM before any re-render
+    const domTexts = {};
+    document.querySelectorAll('.backlog-box textarea').forEach(ta => {
+      if (ta.dataset.taskId) domTexts[ta.dataset.taskId] = ta.value;
+    });
+
+    // Refresh state from server to ensure IDs are current
+    state = await api('GET', '/api/state');
+
+    const items = tasksFor(sessionId, 'backlog');
+    if (items.length === 0) { toast('No backlog items', true); return; }
+    if (focusedIdx >= items.length) focusedIdx = items.length - 1;
+    const task = items[focusedIdx];
+    if (!task) { toast('No task at index', true); return; }
+
+    // Use DOM text if available (matched by position), otherwise server text
+    const taskId = task.id;
+    let prompt = domTexts[taskId] ? domTexts[taskId].trim() : '';
+    // If DOM didn't have this ID (server restarted), try text by position
+    if (!prompt) {
+      const domKeys = Object.keys(domTexts);
+      if (domKeys.length > focusedIdx) {
+        prompt = domTexts[domKeys[focusedIdx]]?.trim() || '';
+      }
+    }
+    if (!prompt) prompt = task.prompt.trim();
+    if (!prompt) { toast('Empty prompt', true); return; }
+
+    // Save prompt to server, then start
+    clearTimeout(saveTimers[taskId]);
+    const putRes = await api('PUT', `/api/task/${taskId}`, { prompt });
+    if (putRes.error) { toast(`Save failed: ${putRes.error}`, true); return; }
+    const res = await api('POST', `/api/task/${taskId}/start${getPushParams(overrideParams)}`);
+    if (res.error) { toast(`Start failed: ${res.error}`, true); return; }
+
+    toast(planMode ? 'Sent to In Progress (plan mode)' : 'Sent to In Progress');
+    if (focusedIdx > 0) focusedIdx--;
+    await refresh();
+    await ensureBacklogMinimumRows(sessionId);
+    const ipSection = document.getElementById('inprogressSection');
+    if (ipSection) ipSection.scrollTop = ipSection.scrollHeight;
+  } catch (err) {
+    toast('Error: ' + err.message, true);
+    console.error('sendFocusedToPane failed:', err);
+  }
+}
+
+async function markDone(taskId) {
+  await api('POST', `/api/task/${taskId}/done`);
+  await refresh();
+  toast('Done');
+  await autoGenerateTodoIfNeeded(activeSession);
+}
+
+async function autoGenerateTodoIfNeeded(sessId) {
+  const doneItems = tasksFor(sessId, 'done');
+  if (doneItems.length < 3) return;
+  const today = getTodayPacific();
+  const todos = todosForDate(today);
+  const hasTodo = todos.some(t => t.session === sessId && !t.done);
+  if (hasTodo) return;
+  let todoText = '';
+  if (providerSupports('todo_name', sessId)) {
+    // Ask the provider-specific backend to generate a short name when supported.
+    const prompts = doneItems.map(t => t.prompt.trim());
+    const res = await api('POST', '/api/generate-todo-name', {
+      prompts,
+      session: sessId,
+      provider: sessionProvider(sessId),
+    });
+    todoText = res.name || '';
+  }
+  if (!todoText) todoText = 'Session ' + sessId + ' work';
+  await api('POST', '/api/todo', { text: todoText, session: sessId });
+  await refresh();
+  toast(`Auto-created todo for Session ${sessId}`);
+}
+
+async function markFirstInProgressDone() {
+  const items = ipSorted(activeSession);
+  if (items.length === 0) return;
+  await markDone(items[0].id);
+}
+
+async function deleteCurrentBacklog() {
+  if (focusedZone !== 'backlog') return;
+  flushTextareaValues();
+  const items = tasksFor(activeSession, 'backlog');
+  const task = items[focusedIdx];
+  if (!task) return;
+  if (items.length <= MIN_BACKLOG_ROWS) {
+    if ((task.prompt || '') === '') return;
+    await api('PUT', `/api/task/${task.id}`, { prompt: '' });
+    task.prompt = '';
+    await refresh();
+    return;
+  }
+  await api('DELETE', `/api/task/${task.id}`);
+  focusedIdx = Math.min(focusedIdx, items.length - 2);
+  await refresh();
+}
+
+async function addNewBacklog() {
+  const active = document.activeElement;
+  const selection = active && active.tagName === 'TEXTAREA'
+    ? { start: active.selectionStart, end: active.selectionEnd }
+    : null;
+  flushTextareaValues();
+  const items = tasksFor(activeSession, 'backlog');
+  const carriedTaskId = (focusedZone === 'backlog' && items[focusedIdx]) ? items[focusedIdx].id : null;
+  const payload = { prompt: '', session: activeSession };
+  if (carriedTaskId) payload.before_id = carriedTaskId;
+  await api('POST', '/api/task', payload);
+  await refresh();
+  focusedZone = 'backlog';
+  if (carriedTaskId) {
+    const newItems = tasksFor(activeSession, 'backlog');
+    const newIdx = newItems.findIndex(t => t.id === carriedTaskId);
+    focusedIdx = newIdx >= 0 ? newIdx : 0;
+  } else {
+    focusedIdx = 0;
+  }
+  render();
+  const list = document.getElementById('backlogList');
+  const ta = list.querySelector(`textarea[data-idx="${focusedIdx}"]`);
+  if (!ta) return;
+  if (selection) {
+    focusTextareaWithSelection(ta, selection.start, selection.end);
+  } else {
+    focusTextareaAtEnd(ta);
+  }
+}
+
+async function changeSessionProvider(provider) {
+  try {
+    const res = await api('PUT', `/api/session/${activeSession}`, { provider });
+    if (res.error) {
+      toast(res.error, true);
+      await refresh();
+      return;
+    }
+    await refresh();
+    const suffix = provider === 'codex'
+      ? ` Start Codex in the pane with CC_HARNESS_SESSION=${activeSession} codex.`
+      : '';
+    toast(`Session ${activeSession} now uses ${res.provider_label || provider}.${suffix}`);
+  } catch (err) {
+    toast('Provider change failed: ' + err.message, true);
+    await refresh();
+  }
+}
+
+async function addSession() {
+  const res = await api('POST', '/api/session');
+  if (res.error) { toast(res.error, true); return; }
+  await refresh();
+  switchSession(res.id);
+  toast(`Session ${res.id} created`);
+}
+
+async function deleteCurrentSession() {
+  const ids = Object.keys(state.sessions).sort();
+  if (ids.length <= 1) { toast('Cannot delete last session', true); return; }
+  // Check if session has in-progress tasks
+  const ip = tasksFor(activeSession, 'in_progress');
+  if (ip.length > 0) { toast('Finish in-progress tasks first', true); return; }
+  const res = await api('DELETE', `/api/session/${activeSession}`);
+  if (res.error) { toast(res.error, true); return; }
+  // Switch to the first remaining session
+  await refresh();
+  const remaining = Object.keys(state.sessions).sort();
+  if (remaining.length > 0) switchSession(remaining[0]);
+  toast('Session deleted');
+}
+
+async function pingCurrent() {
+  const paneIdx = state.sessions[activeSession]?.pane_index;
+  if (!paneIdx) return;
+  await api('POST', `/api/ping/${paneIdx}`);
+  toast(`Pinged pane ${paneIdx}`);
+}
+
+async function flushArchive() {
+  const sessionId = activeSession;
+  const res = await api('POST', '/api/flush', { session: sessionId });
+  if (res.error) { toast(res.error, true); return; }
+  focusedIdx = 0;
+  selectedSet.clear();
+  selectionAnchor = null;
+  await refresh();
+  if (!todoForSession(sessionId)) {
+    delete sessionElapsed[sessionId];
+    persistTimers();
+    renderTabs();
+    renderTimerDisplays();
+  }
+  toast(`Cleared ${res.count} tasks from session ${sessionId}`);
+}
+
+// Flush all textarea values into JS state + trigger server save
+function isAtFirstLine(ta) {
+  return ta.selectionStart === 0 || ta.value.lastIndexOf('\n', ta.selectionStart - 1) === -1;
+}
+function isAtLastLine(ta) {
+  return ta.value.indexOf('\n', ta.selectionStart) === -1;
+}
+
+function isOnTodoPrimaryLine(ta) {
+  return isAtFirstLine(ta);
+}
+
+function scrollFullyIntoView(el) {
+  const prev = el.previousElementSibling;
+  const next = el.nextElementSibling;
+  if (prev) {
+    prev.scrollIntoView({ block: 'nearest' });
+  } else {
+    const container = el.closest('.inprogress-section') || el.closest('.backlog-section');
+    if (container) container.scrollTop = 0;
+  }
+  if (next) next.scrollIntoView({ block: 'nearest' });
+  el.scrollIntoView({ block: 'nearest' });
+}
+
+async function interruptSession() {
+  if (!providerSupports('interrupt')) {
+    toast('Interrupt is not available for this session provider', true);
+    return;
+  }
+  try {
+    const res = await api('POST', `/api/session/${activeSession}/interrupt`);
+    if (res.error) { toast(`Interrupt failed: ${res.error}`, true); return; }
+    toast('Interrupted');
+    await refresh();
+  } catch (err) {
+    toast('Interrupt error: ' + err.message, true);
+  }
+}
+
+async function handleRewind() {
+  if (!providerSupports('rewind')) {
+    toast('Rewind is not available for this session provider', true);
+    return;
+  }
+  if (rewindInProgress) return;
+  const ipItems = ipSorted(activeSession);
+  if (!ipItems.length || focusedIdx >= ipItems.length) return;
+
+  // Everything from focused item onward gets rewound
+  const tasksToRewind = ipItems.slice(focusedIdx);
+  const totalTurns = tasksToRewind.reduce((sum, t) => sum + (t.turns || 0), 0);
+  if (totalTurns === 0) {
+    toast('No tracked turns to rewind', true);
+    return;
+  }
+
+  rewindInProgress = true;
+  toast(`Rewinding ${tasksToRewind.length} item(s), ${totalTurns} turn(s)...`);
+  try {
+    const res = await api('POST', `/api/session/${activeSession}/rewind`, {
+      task_ids: tasksToRewind.map(t => t.id),
+      total_turns: totalTurns
+    });
+    if (res.error) { toast(`Rewind failed: ${res.error}`, true); return; }
+    focusedZone = 'backlog';
+    focusedIdx = 0;
+    selectedSet.clear();
+    selectionAnchor = null;
+    await refresh();
+    toast(`Rewound ${tasksToRewind.length} item(s) to backlog`);
+  } catch (err) {
+    toast('Rewind error: ' + err.message, true);
+  } finally {
+    rewindInProgress = false;
+  }
+}
+
+function togglePlanMode() {
+  if (!providerSupports('plan')) {
+    toast('Plan mode is only available for Claude Code sessions', true);
+    return;
+  }
+  planMode = !planMode;
+  document.getElementById('planToggle').classList.toggle('active', planMode);
+}
+
+function selectIPItem(event, idx) {
+  if (event && hasInProgressTextSelection()) return;
+  selectedSet.clear();
+  selectionAnchor = null;
+  focusedZone = 'ip';
+  focusedIdx = idx;
+  render();
+  const el = document.querySelector(`.inprogress-item[data-ip-idx="${idx}"]`);
+  if (el) scrollFullyIntoView(el);
+}
+
+function flushTextareaValues() {
+  document.querySelectorAll('.backlog-box textarea').forEach(ta => {
+    const taskId = ta.dataset.taskId;
+    if (!taskId) return;
+    const task = state.tasks.find(t => t.id === taskId);
+    if (task && task.prompt !== ta.value) {
+      task.prompt = ta.value;
+      clearTimeout(saveTimers[taskId]);
+      api('PUT', `/api/task/${taskId}`, { prompt: ta.value });
+    }
+  });
+  flushNotesValues();
+}
+
+function multiSelect(direction) {
+  flushTextareaValues();
+  const items = focusedZone === 'ip'
+    ? ipSorted(activeSession)
+    : tasksFor(activeSession, 'backlog');
+  if (items.length === 0) return;
+
+  // Set anchor on first Shift+Arrow press
+  if (selectionAnchor === null) selectionAnchor = focusedIdx;
+
+  const newIdx = focusedIdx + direction;
+  if (newIdx < 0 || newIdx >= items.length) return;
+  focusedIdx = newIdx;
+
+  // Selection = range from anchor to cursor (inclusive), by ID
+  selectedSet.clear();
+  const lo = Math.min(selectionAnchor, focusedIdx);
+  const hi = Math.max(selectionAnchor, focusedIdx);
+  for (let i = lo; i <= hi; i++) {
+    if (items[i]) selectedSet.add(items[i].id);
+  }
+
+  render();
+
+  // Scroll the newly focused item into view
+  if (focusedZone === 'ip') {
+    const el = document.querySelector(`.inprogress-item[data-ip-idx="${focusedIdx}"]`);
+    if (el) scrollFullyIntoView(el);
+  } else {
+    const ta = document.getElementById(`bl-${items[focusedIdx].id}`);
+    if (ta) {
+      suppressFocusClear();
+      focusTextareaAtEnd(ta);
+      const blEl = ta.closest('.backlog-item'); if (blEl) scrollFullyIntoView(blEl);
+    }
+  }
+}
+
+function navigateItems(direction) {
+  flushTextareaValues();
+  const ipItems = ipSorted(activeSession);
+  const blItems = tasksFor(activeSession, 'backlog');
+
+  // Clear multi-select if navigating (Option+Arrow without Shift)
+  selectedSet.clear();
+
+  if (direction === -1) {
+    // Moving up
+    if (focusedZone === 'backlog' && focusedIdx > 0) {
+      focusedIdx--;
+    } else if (focusedZone === 'backlog' && focusedIdx === 0 && ipItems.length > 0) {
+      // Cross into in-progress (bottom of ip list)
+      focusedZone = 'ip';
+      focusedIdx = ipItems.length - 1;
+    } else if (focusedZone === 'ip' && focusedIdx > 0) {
+      focusedIdx--;
+    }
+    // else: already at top, do nothing
+  } else {
+    // Moving down
+    if (focusedZone === 'ip' && focusedIdx < ipItems.length - 1) {
+      focusedIdx++;
+    } else if (focusedZone === 'ip' && focusedIdx === ipItems.length - 1 && blItems.length > 0) {
+      // Cross into backlog (top of backlog list)
+      focusedZone = 'backlog';
+      focusedIdx = 0;
+    } else if (focusedZone === 'backlog' && focusedIdx < blItems.length - 1) {
+      focusedIdx++;
+    }
+    // else: already at bottom, do nothing
+  }
+
+  render();
+
+  // Scroll the focused item into view
+  if (focusedZone === 'ip') {
+    const el = document.querySelector(`.inprogress-item[data-ip-idx="${focusedIdx}"]`);
+    if (el) scrollFullyIntoView(el);
+  } else if (focusedZone === 'backlog') {
+    const ta = document.getElementById(`bl-${blItems[focusedIdx].id}`);
+    if (ta) {
+      focusTextareaAtEnd(ta);
+      const blEl = ta.closest('.backlog-item'); if (blEl) scrollFullyIntoView(blEl);
+    }
+  }
+}
+
+function handleTaskKeydown(event) {
+  // Tab key: insert 4 spaces in textarea instead of moving focus
+  if (event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey) {
+    event.preventDefault();
+    const ta = event.target;
+    if (ta.tagName === 'TEXTAREA') {
+      const start = ta.selectionStart;
+      const end = ta.selectionEnd;
+      ta.value = ta.value.substring(0, start) + '    ' + ta.value.substring(end);
+      ta.selectionStart = ta.selectionEnd = start + 4;
+      ta.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    return;
+  }
+  // Backspace: delete 4 spaces (soft tab) if cursor is preceded by them
+  if (event.key === 'Backspace' && !event.altKey && !event.ctrlKey && !event.metaKey) {
+    const ta = event.target;
+    if (ta.tagName === 'TEXTAREA' && ta.selectionStart === ta.selectionEnd) {
+      const pos = ta.selectionStart;
+      if (pos >= 4 && ta.value.substring(pos - 4, pos) === '    ') {
+        event.preventDefault();
+        ta.value = ta.value.substring(0, pos - 4) + ta.value.substring(pos);
+        ta.selectionStart = ta.selectionEnd = pos - 4;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        return;
+      }
+    }
+  }
+  if (event.metaKey && !event.shiftKey && event.key === 'Enter') {
+    event.preventDefault();
+    event.stopPropagation();
+    handleCmdEnter();
+    return;
+  }
+  // Opt+Shift+Arrow Up/Down: multi-select backlog rows
+  if (event.altKey && event.shiftKey && !event.ctrlKey && !event.metaKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+    event.preventDefault();
+    event.stopPropagation();
+    multiSelect(event.key === 'ArrowUp' ? -1 : 1);
+    return;
+  }
+  // Opt+Arrow Up/Down: reorder backlog slot, or browse history at top slot
+  if (event.altKey && !event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (focusedZone === 'backlog' && focusedIdx === 0) {
+      if (event.key === 'ArrowUp') { browseHistory(-1); return; }
+      if (event.key === 'ArrowDown' && historyIdx >= 0) { browseHistory(1); return; }
+    }
+    reorderBacklog(event.key === 'ArrowUp' ? -1 : 1);
+    return;
+  }
+  // Plain Arrow Up/Down: navigate between rows at textarea boundaries
+  const ta = event.target;
+  if (!event.altKey && !event.ctrlKey && !event.metaKey && ta.tagName === 'TEXTAREA') {
+    if (event.key === 'ArrowUp' && isAtFirstLine(ta)) {
+      event.preventDefault();
+      event.stopPropagation();
+      historyIdx = -1;
+      selectedSet.clear();
+      navigateItems(-1);
+    } else if (event.key === 'ArrowDown' && isAtLastLine(ta)) {
+      event.preventDefault();
+      event.stopPropagation();
+      historyIdx = -1;
+      selectedSet.clear();
+      navigateItems(1);
+    }
+  }
+}
+
+// ── Keyboard shortcuts ──
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && timeBlocksModalDate) {
+    e.preventDefault();
+    closeTimeBlocksModal();
+    return;
+  }
+
+  // Cmd+Escape: rewind in-progress items back to backlog
+  if (e.metaKey && e.key === 'Escape') {
+    e.preventDefault();
+    if (viewMode === 'tasks' && focusedZone === 'ip') {
+      handleRewind();
+    }
+    return;
+  }
+
+  // Cmd+Delete: clear todo text and unset session (keep the row)
+  if (e.metaKey && e.key === 'Backspace' && viewMode === 'todo') {
+    e.preventDefault();
+    clearTodoContent();
+    return;
+  }
+
+  // Cmd+Enter (no shift): context-dependent push action
+  if (e.metaKey && !e.shiftKey && e.key === 'Enter') {
+    e.preventDefault();
+    if (viewMode === 'tasks') handleCmdEnter();
+    else if (viewMode === 'todo') todoOptEnter();
+    return;
+  }
+
+  // Alt (Option) shortcuts
+  if (e.altKey) {
+    // Opt+Enter: new slot
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (viewMode === 'tasks') addNewBacklog();
+      else if (viewMode === 'todo') addNewTodo();
+      return;
+    }
+
+    // Opt+1 through Opt+6: switch session
+    if (e.key >= '1' && e.key <= '6') {
+      e.preventDefault();
+      switchSession(e.key);
+      return;
+    }
+    // Some keyboards send special chars for Opt+number, handle those too
+    const optNumMap = {
+      '\u00A1': '1', // Opt+1 on some layouts
+      '\u2122': '2', // Opt+2
+      '\u00A3': '3', // Opt+3
+      '\u00A2': '4', // Opt+4
+      '\u221E': '5', // Opt+5
+      '\u00A7': '6', // Opt+6
+    };
+    if (optNumMap[e.key]) {
+      e.preventDefault();
+      switchSession(optNumMap[e.key]);
+      return;
+    }
+
+    // Opt+Tab: toggle view (tasks <-> todo)
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      toggleView();
+      return;
+    }
+
+    // Opt+Left/Right: switch session (tasks) or cycle todo session (todo)
+    if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      if (viewMode === 'todo') cycleTodoSession(-1);
+      else navigateSession(-1);
+      return;
+    }
+    if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      if (viewMode === 'todo') cycleTodoSession(1);
+      else navigateSession(1);
+      return;
+    }
+
+    // Opt+Shift+Up/Down: multi-select backlog rows only
+    if (e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown') && viewMode === 'tasks' && focusedZone === 'backlog') {
+      e.preventDefault();
+      multiSelect(e.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
+
+    // Opt+Up/Down: reorder current slot, or browse history at top backlog
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (viewMode === 'tasks' && focusedZone === 'backlog' && focusedIdx === 0) { browseHistory(-1); return; }
+      if (viewMode === 'todo') reorderTodo(-1);
+      else reorderBacklog(-1);
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (viewMode === 'tasks' && focusedZone === 'backlog' && focusedIdx === 0 && historyIdx >= 0) { browseHistory(1); return; }
+      if (viewMode === 'todo') reorderTodo(1);
+      else reorderBacklog(1);
+      return;
+    }
+
+    // Opt+Backspace: delete current slot (backlog or todo)
+    if (e.key === 'Backspace') {
+      e.preventDefault();
+      if (viewMode === 'todo') deleteTodo();
+      else deleteCurrentBacklog();
+      return;
+    }
+  }
+
+  // Plain Enter: approve plan when focused on awaiting IP item
+  if (!e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === 'Enter') {
+    const active = document.activeElement;
+    const inTextarea = active && active.tagName === 'TEXTAREA';
+    if (!inTextarea && viewMode === 'tasks' && focusedZone === 'ip') {
+      const sess = state.sessions[activeSession];
+      const awaiting = sess?.awaiting_approval;
+      const awaitingPerm = sess?.awaiting_permission;
+      const ipItems = ipSorted(activeSession);
+      if (focusedIdx === ipItems.length - 1) {
+        if (awaiting) { e.preventDefault(); approveSession(); return; }
+        if (awaitingPerm) { e.preventDefault(); yesSession(); return; }
+      }
+    }
+  }
+
+  // Shift+Arrow Up/Down: multi-select in-progress rows only
+  if (!e.altKey && !e.ctrlKey && !e.metaKey && e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    const active = document.activeElement;
+    const inTextarea = active && active.tagName === 'TEXTAREA';
+    if (!inTextarea && viewMode === 'tasks' && focusedZone === 'ip') {
+      e.preventDefault();
+      multiSelect(e.key === 'ArrowUp' ? -1 : 1);
+      return;
+    }
+  }
+
+  // Plain Arrow Up/Down: navigate rows when not editing a textarea
+  if (!e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+    const active = document.activeElement;
+    const inTextarea = active && active.tagName === 'TEXTAREA';
+    if (!inTextarea) {
+      e.preventDefault();
+      const dir = e.key === 'ArrowUp' ? -1 : 1;
+      if (viewMode === 'tasks') {
+        selectedSet.clear();
+        selectionAnchor = null;
+        navigateItems(dir);
+      } else if (viewMode === 'todo') {
+        navigateTodo(dir);
+      }
+    }
+  }
+});
+
+// ── Refresh loop ──
+async function refresh() {
+  try {
+    state = await api('GET', '/api/state');
+    render();
+  } catch (e) {}
+}
+
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/service-worker.js").catch((err) => {
+      console.error("service worker registration failed", err);
+    });
+  });
+}
+
+// Initial load
+(async () => {
+  state = await api('GET', '/api/state');
+  initTimersFromState();
+  render();
+  renderTimerDisplays();
+})();
+// Poll every second — never re-render backlog during poll (preserves textarea content)
+setInterval(async () => {
+  try {
+    state = await api('GET', '/api/state');
+    renderTabs();
+    renderDone();
+    if (!shouldPreserveInProgressSelection()) renderInProgress();
+    renderTodoTimers();
+    // Backlog is only re-rendered on explicit actions (add, delete, start, navigate)
+  } catch (e) {}
+}, 1000);
+// Timer tick — runs every second, but accounts for real elapsed wall-clock time
+setInterval(() => {
+  if (!timerInitialized) return;
+  const now = Date.now();
+  let blockSyncTime = now;
+  // Midnight reset (Pacific time)
+  const today = new Date().toLocaleDateString('en-CA', {timeZone: 'America/Los_Angeles'});
+  if (timerDate && timerDate !== today) {
+    // Archive current day's total before resetting
+    const dayTotal = totalTodoElapsedForDate(timerDate);
+    if (dayTotal > 0) {
+      api('POST', '/api/timers/history', { date: timerDate, total: dayTotal });
+    }
+    syncTimerActivityBlock(false, now);
+    for (const sid in sessionElapsed) sessionElapsed[sid] = 0;
+    todoSessionStart = {};
+    unassignedMasterElapsed = 0;
+    timerDate = today;
+    timerPauseReason = null;
+    timerBusyMode = false;
+    resetTimerTick(now);
+    persistTimers();
+  }
+  const activeTodo = todoForSession(activeSession);
+  const tickStart = Number(lastTimerTickAt);
+  if (!timerPaused() && Number.isFinite(tickStart) && tickStart <= now) {
+    let deltaMs = 0;
+    if (timerBusyMode) {
+      deltaMs = now - tickStart;
+    } else {
+      if (now - lastActivityTime >= IDLE_AUTO_PAUSE_MS) { // 10 minutes
+        deltaMs = lastActivityTime - tickStart;
+        timerPauseReason = 'idle';
+        blockSyncTime = lastActivityTime;
+        persistTimers();
+      } else {
+        deltaMs = now - tickStart;
+      }
+    }
+    applyTimerDelta(deltaMs, activeTodo);
+  }
+  resetTimerTick(now);
+  syncTimerActivityBlock(timerShouldBeRunningNow(now), blockSyncTime);
+  renderTabs();
+  renderTimerDisplays();
+}, 1000);
+// Auto-save timers every 30 seconds
+setInterval(() => {
+  if (timerInitialized && Date.now() - lastTimerSave > 30000) persistTimers();
+}, 30000);
+</script>
+</body>
+</html>
